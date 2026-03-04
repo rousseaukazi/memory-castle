@@ -5,33 +5,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Memory Castle</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { overflow: hidden; background: #060408; }
-canvas { display: block; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { overflow:hidden; background:#060408; }
+canvas { display:block; }
+
 #label {
-  position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
-  background: rgba(16, 10, 6, 0.75); backdrop-filter: blur(18px);
-  color: #f5e8c8; padding: 10px 30px; border-radius: 24px;
-  font: 12px/1 'Georgia', serif; letter-spacing: 2.5px;
-  text-transform: uppercase; pointer-events: none;
-  opacity: 0; transition: opacity 0.2s;
-  border: 1px solid rgba(255, 210, 120, 0.2);
+  position:fixed; bottom:36px; left:50%; transform:translateX(-50%);
+  background:rgba(10,6,4,0.75); backdrop-filter:blur(18px);
+  color:#f5e8c8; padding:10px 30px; border-radius:24px;
+  font:12px/1 'Georgia',serif; letter-spacing:2.5px; text-transform:uppercase;
+  pointer-events:none; opacity:0; transition:opacity 0.2s;
+  border:1px solid rgba(255,210,120,0.2); z-index:20;
 }
 #title {
-  position: fixed; top: 28px; left: 50%; transform: translateX(-50%);
-  color: rgba(245, 232, 200, 0.6); font: 11px/1 'Georgia', serif;
-  letter-spacing: 5px; text-transform: uppercase;
-  text-shadow: 0 0 24px rgba(220, 160, 60, 0.35);
-}
-#count {
-  position: fixed; bottom: 26px; right: 24px;
-  color: rgba(245, 232, 200, 0.3); font: 10px/1 'Georgia', serif;
-  letter-spacing: 2px; text-transform: uppercase;
+  position:fixed; top:26px; left:50%; transform:translateX(-50%);
+  color:rgba(245,232,200,0.55); font:11px/1 'Georgia',serif;
+  letter-spacing:5px; text-transform:uppercase;
+  text-shadow:0 0 24px rgba(220,160,60,0.35); z-index:20;
 }
 #stage {
-  position: fixed; top: 28px; left: 24px;
-  color: rgba(245, 232, 200, 0.3); font: 10px/1 'Georgia', serif;
-  letter-spacing: 1.5px; text-transform: uppercase;
+  position:fixed; top:26px; left:24px;
+  color:rgba(245,232,200,0.3); font:10px/1 'Georgia',serif;
+  letter-spacing:1.5px; text-transform:uppercase; z-index:20;
+}
+#count {
+  position:fixed; bottom:24px; right:24px;
+  color:rgba(245,232,200,0.28); font:10px/1 'Georgia',serif;
+  letter-spacing:2px; text-transform:uppercase; z-index:20;
+}
+#toggle {
+  position:fixed; top:20px; right:20px; z-index:30;
+  width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,0.18);
+  background:rgba(255,255,255,0.09); backdrop-filter:blur(12px);
+  cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center;
+  transition:background 0.3s; user-select:none;
+}
+#toggle:hover { background:rgba(255,255,255,0.18); }
+#vignette {
+  position:fixed; inset:0; pointer-events:none; z-index:10;
+  background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%);
 }
 </style>
 </head>
@@ -40,458 +52,618 @@ canvas { display: block; }
 <div id="stage"></div>
 <div id="label"></div>
 <div id="count"></div>
+<button id="toggle">🌙</button>
+<div id="vignette"></div>
 
 <script>
-window.onerror = (m, s, l) => {
+window.onerror = (m,s,l) => {
   const t = document.getElementById('title');
-  t.textContent = 'Error (line ' + l + '): ' + m;
+  t.textContent = 'Error (line '+l+'): '+m;
   t.style.color = '#ff6666';
 };
 </script>
-
 <script type="importmap">
 { "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-/* ── helpers ─────────────────────────────────────────── */
+/* ─── helpers ───────────────────────────────────── */
 function mkRand(seed) {
   let s = (seed ^ 0xdeadbeef) >>> 0;
-  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0x100000000; };
+  return () => { s = (Math.imul(s,1664525)+1013904223)>>>0; return s/0x100000000; };
 }
 const today = new Date();
-const dateSeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
-function hash32(v) {
-  v = (v ^ 61) ^ (v >>> 16); v += v << 3; v ^= v >>> 4;
-  v = Math.imul(v, 0x27d4eb2d); return (v ^ (v >>> 15)) >>> 0;
-}
+const dateSeed = today.getFullYear()*10000+(today.getMonth()+1)*100+today.getDate();
+function hash32(v){ v=(v^61)^(v>>>16); v+=v<<3; v^=v>>>4; v=Math.imul(v,0x27d4eb2d); return (v^(v>>>15))>>>0; }
 
-/* ── renderer ────────────────────────────────────────── */
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
+/* ─── renderer ──────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-/* ── scene + sky ─────────────────────────────────────── */
+/* ─── scene ─────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(new THREE.Color(0x200e06), 0.008);
 
+/* ─── sky shader (dark ↔ light mode) ────────────── */
+const SKY_DARK  = { top: new THREE.Color(0x060d18), horiz: new THREE.Color(0x1a0c04), bot: new THREE.Color(0x040204) };
+const SKY_LIGHT = { top: new THREE.Color(0x1a4a8a), horiz: new THREE.Color(0x70aad8), bot: new THREE.Color(0x90c4b8) };
+
+const skyUni = {
+  top:   { value: SKY_DARK.top.clone() },
+  horiz: { value: SKY_DARK.horiz.clone() },
+  bot:   { value: SKY_DARK.bot.clone() },
+};
 const skyMat = new THREE.ShaderMaterial({
-  uniforms: {
-    top:   { value: new THREE.Color(0x0b1420) },
-    horiz: { value: new THREE.Color(0x3d1f0a) },
-    bot:   { value: new THREE.Color(0x0a0608) },
-  },
-  vertexShader: `varying float vY; void main(){ vY=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-  fragmentShader: `
-    uniform vec3 top,horiz,bot; varying float vY;
-    void main(){
-      float t=clamp(vY,-1.,1.);
-      vec3 c=t>0.?mix(horiz,top,pow(t,.55)):mix(horiz,bot,-t*2.);
-      gl_FragColor=vec4(c,1.);
-    }`,
-  side: THREE.BackSide, depthWrite: false,
+  uniforms: skyUni,
+  vertexShader:   `varying float vY; void main(){ vY=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: `uniform vec3 top,horiz,bot; varying float vY;
+    void main(){ float t=clamp(vY,-1.,1.);
+      vec3 c=t>0.?mix(horiz,top,pow(t,.5)):mix(horiz,bot,-t*2.);
+      gl_FragColor=vec4(c,1.); }`,
+  side: THREE.BackSide, depthWrite:false,
 });
-scene.add(new THREE.Mesh(new THREE.SphereGeometry(160, 20, 10), skyMat));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(160,24,12), skyMat));
 
-/* ── camera ──────────────────────────────────────────── */
-const cam = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 180);
-cam.position.set(20, 16, 20);
+/* ─── camera (front-facing, slight angle) ───────── */
+const cam = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 180);
+cam.position.set(-4, 10, -16);
 
 const ctrl = new OrbitControls(cam, renderer.domElement);
 ctrl.enableDamping = true; ctrl.dampingFactor = 0.07;
 ctrl.target.set(0, 2.5, 0);
-ctrl.minPolarAngle = Math.PI / 9; ctrl.maxPolarAngle = Math.PI / 2.15;
-ctrl.minDistance = 8; ctrl.maxDistance = 48;
+ctrl.minPolarAngle = Math.PI/9; ctrl.maxPolarAngle = Math.PI/2.1;
+ctrl.minDistance = 6; ctrl.maxDistance = 40;
 
-/* ── lights ──────────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0x30180a, 3.0));
-scene.add(new THREE.HemisphereLight(0x4a2808, 0x080406, 0.8));
+/* ─── brick constants ───────────────────────────── */
+const BW=0.60, BH=0.38, BD=0.55;
 
-const sun = new THREE.DirectionalLight(0xffa855, 3.5);
-sun.position.set(12, 26, 10);
-sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
-sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 70;
-sun.shadow.camera.left = sun.shadow.camera.bottom = -18;
-sun.shadow.camera.right = sun.shadow.camera.top = 18;
-sun.shadow.radius = 3; sun.shadow.bias = -0.001;
-scene.add(sun);
+/* ─── lights ─────────────────────────────────────── */
+// Shared ambient
+const ambient = new THREE.AmbientLight(0x201008, 2.5);
+scene.add(ambient);
+const hemi = new THREE.HemisphereLight(0x3a2010, 0x050306, 0.7);
+scene.add(hemi);
 
-const moonFill = new THREE.DirectionalLight(0x2a3a5c, 0.6);
-moonFill.position.set(-10, 6, -14);
-scene.add(moonFill);
+// Main sun (light mode) / moon (dark mode) direction light
+const mainLight = new THREE.DirectionalLight(0xffa855, 3.5);
+mainLight.position.set(12,26,10);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.set(4096,4096);
+mainLight.shadow.camera.near = 0.5; mainLight.shadow.camera.far = 60;
+mainLight.shadow.camera.left = mainLight.shadow.camera.bottom = -15;
+mainLight.shadow.camera.right = mainLight.shadow.camera.top = 15;
+mainLight.shadow.radius = 3; mainLight.shadow.bias = -0.001;
+scene.add(mainLight);
 
-/* ── constants ───────────────────────────────────────── */
-const BW = 0.60, BH = 0.38, BD = 0.55;
-const GW = 14, GD = 10;
+// Fill
+const fillLight = new THREE.DirectionalLight(0x2a3a6c, 0.5);
+fillLight.position.set(-10,6,-14);
+scene.add(fillLight);
 
-/* ── torch lights at gate ────────────────────────────── */
-const gateZ = (0 - GD / 2 + 0.5) * BD;
-const torchL = new THREE.PointLight(0xff7722, 3.0, 5.5);
-const torchR = new THREE.PointLight(0xff7722, 3.0, 5.5);
-torchL.position.set(-1.2 * BW, 1.1, gateZ - 0.35);
-torchR.position.set( 1.2 * BW, 1.1, gateZ - 0.35);
+// Torches at gate (computed after castle, positioned below)
+const torchL = new THREE.PointLight(0xff7722, 4.0, 6);
+const torchR = new THREE.PointLight(0xff7722, 4.0, 6);
 scene.add(torchL, torchR);
 
-const keepGlow = new THREE.PointLight(0xff9944, 1.8, 7);
-keepGlow.position.set(0, 1.5, 0);
+// Keep interior glow
+const keepGlow = new THREE.PointLight(0xff9944, 2.5, 8);
+keepGlow.position.set(0, 1.8, 0);
 scene.add(keepGlow);
 
-/* ── ground ──────────────────────────────────────────── */
+/* ─── fog ───────────────────────────────────────── */
+scene.fog = new THREE.FogExp2(new THREE.Color(0x14090a), 0.007);
+
+/* ─── ground ─────────────────────────────────────── */
 const gndTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#140c08'; ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = '#110a06'; ctx.fillRect(0,0,256,256);
   const g = mkRand(7);
-  for (let i = 0; i < 800; i++) {
-    const v = (g() - 0.5) * 18;
-    ctx.fillStyle = `rgba(${50+v|0},${38+v|0},${28+v|0},0.4)`;
-    ctx.fillRect(g() * 256, g() * 256, 2, 2);
+  for (let i = 0; i < 700; i++) {
+    const v=(g()-.5)*18;
+    ctx.fillStyle=`rgba(${48+v|0},${36+v|0},${26+v|0},0.4)`;
+    ctx.fillRect(g()*256,g()*256,2,2);
   }
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
-  for (let x = 0; x < 256; x += 28) ctx.strokeRect(x, 0, 28, 256);
-  for (let y = 0; y < 256; y += 28) ctx.strokeRect(0, y, 256, 28);
+  ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=1;
+  for (let x=0;x<256;x+=28) ctx.strokeRect(x,0,28,256);
+  for (let y=0;y<256;y+=28) ctx.strokeRect(0,y,256,28);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 10);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10,10);
   return t;
 })();
-{
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(100, 100),
-    new THREE.MeshStandardMaterial({ map: gndTex, roughness: 0.98, color: 0x1a0e08 })
-  );
-  m.rotation.x = -Math.PI / 2; m.position.y = -0.02; m.receiveShadow = true;
-  scene.add(m);
-}
-{
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(10, 0.4, 7.4),
-    new THREE.MeshStandardMaterial({ color: 0x1a100a, roughness: 0.96 })
-  );
-  m.position.y = -0.2; m.receiveShadow = true; m.castShadow = true;
-  scene.add(m);
-}
+const gndMat = new THREE.MeshStandardMaterial({ map:gndTex, roughness:0.98, color:0x180e08 });
+const gnd = new THREE.Mesh(new THREE.PlaneGeometry(100,100), gndMat);
+gnd.rotation.x = -Math.PI/2; gnd.position.y = -0.02; gnd.receiveShadow = true;
+scene.add(gnd);
 
-/* ═══════════════════════════════════════════════════════
-   CASTLE BLUEPRINT — pure function of N
-   Every brick position is generated in strict architectural
-   priority. Take the first N → always a perfect castle.
-   ═══════════════════════════════════════════════════════ */
+// Plinth
+const plinth = new THREE.Mesh(
+  new THREE.BoxGeometry(6.2,0.4,4.2),
+  new THREE.MeshStandardMaterial({ color:0x180e08, roughness:0.96 })
+);
+plinth.position.y = -0.2; plinth.castShadow = true; plinth.receiveShadow = true;
+scene.add(plinth);
 
-function slotPos(gx, gy, gz) {
+// Moat (ShapeGeometry with rectangular hole)
+const moatShape = new THREE.Shape();
+moatShape.moveTo(-8,-5.5); moatShape.lineTo(8,-5.5); moatShape.lineTo(8,5.5); moatShape.lineTo(-8,5.5); moatShape.lineTo(-8,-5.5);
+const moatHole = new THREE.Path();
+moatHole.moveTo(-3.6,-2.4); moatHole.lineTo(3.6,-2.4); moatHole.lineTo(3.6,2.4); moatHole.lineTo(-3.6,2.4); moatHole.lineTo(-3.6,-2.4);
+moatShape.holes.push(moatHole);
+const moatMesh = new THREE.Mesh(
+  new THREE.ShapeGeometry(moatShape, 3),
+  new THREE.MeshStandardMaterial({ color:0x182840, roughness:0.05, metalness:0.92, transparent:true, opacity:0.88 })
+);
+moatMesh.rotation.x = -Math.PI/2; moatMesh.position.y = -0.06;
+scene.add(moatMesh);
+
+/* ══════════════════════════════════════════════════
+   CASTLE BLUEPRINT — always a complete palace
+   Given N bricks, returns exactly N positions forming
+   a proportionally finished castle + spire.
+   ══════════════════════════════════════════════════ */
+
+// Fixed footprint for current N=230 (extend for larger N later)
+const GW=8, GD=6;
+const GATE_GX=3, GATE_W=2;         // gate: gx=3,4 on front wall
+const H_WALL=3;                      // curtain wall height (rows 0–2)
+const TOWER_EXTRA=3;                 // tower rows above wall battlements
+const KX=2, KZ=2, KW=3, KD=3;      // keep position + size (3×3 hollow)
+const SPIRE_GX=3, SPIRE_GZ=3;       // spire: 2×2 centered on keep
+
+function castlePos(gx,gy,gz) {
   return new THREE.Vector3(
-    (gx - GW / 2 + 0.5) * BW + (gy % 2) * BW * 0.5,
-    gy * BH,
-    (gz - GD / 2 + 0.5) * BD
+    (gx - GW/2 + 0.5)*BW + (gy%2)*BW*0.5,
+    gy*BH,
+    (gz - GD/2 + 0.5)*BD
   );
 }
 
-function buildCastleForN(n) {
-  const q = [];
-  const add = (gx, gy, gz, sec) => q.push({ pos: slotPos(gx, gy, gz), section: sec });
+function buildCastleForN(N) {
+  const slots = [];
+  const add = (gx,gy,gz,sec) => slots.push({ pos: castlePos(gx,gy,gz), section:sec });
 
-  // ── Phase 1: Curtain walls, row by row (all 4 sides together) ──
-  for (let gy = 0; gy < 6; gy++) {
-    // Front wall — gate opening at gx 5–8, rows 0–1
-    for (let gx = 0; gx < GW; gx++) {
-      if (!(gx >= 5 && gx <= 8 && gy <= 1)) add(gx, gy, 0, 'stories');
+  // ── 1. Curtain walls (rows 0 to H_WALL-1) ────────
+  for (let gy=0; gy<H_WALL; gy++) {
+    // Front (gz=0): gate gap at rows 0-1
+    for (let gx=0; gx<GW; gx++) {
+      if (!(gx>=GATE_GX && gx<GATE_GX+GATE_W && gy<=1)) add(gx,gy,0,'stories');
     }
-    // Back wall
-    for (let gx = 0; gx < GW; gx++) add(gx, gy, GD - 1, 'stories');
-    // Left wall (inner z, avoiding corners for tower overlap)
-    for (let gz = 1; gz < GD - 1; gz++) add(0, gy, gz, 'people');
-    // Right wall
-    for (let gz = 1; gz < GD - 1; gz++) add(GW - 1, gy, gz, 'people');
-    if (q.length >= n) return q.slice(0, n);
+    // Back (gz=GD-1)
+    for (let gx=0; gx<GW; gx++) add(gx,gy,GD-1,'stories');
+    // Left (gx=0, inner z)
+    for (let gz=1; gz<GD-1; gz++) add(0,gy,gz,'people');
+    // Right (gx=GW-1, inner z)
+    for (let gz=1; gz<GD-1; gz++) add(GW-1,gy,gz,'people');
   }
 
-  // ── Phase 2: Wall battlements (row 6, alternating) ─────────────
-  for (let gx = 1; gx < GW - 1; gx += 2) {
-    if (gx < 4 || gx > 9) add(gx, 6, 0, 'stories');
-    add(gx, 6, GD - 1, 'stories');
+  // ── 2. Wall battlements (row H_WALL, alternating) ─
+  for (let gx=0; gx<GW; gx+=2) {
+    add(gx, H_WALL, 0,    'stories');  // front
+    add(gx, H_WALL, GD-1, 'stories'); // back
   }
-  for (let gz = 1; gz < GD - 1; gz += 2) {
-    add(0, 6, gz, 'people');
-    add(GW - 1, 6, gz, 'people');
-  }
-  if (q.length >= n) return q.slice(0, n);
-
-  // ── Phase 3: Towers + keep grow together ───────────────────────
-  const T_BASE = 7;
-  const KX = 5, KZ = 3;
-
-  for (let i = 0; i < 30; i++) {
-    const tgy = T_BASE + i;
-
-    // All 4 corner towers (2×2 each)
-    for (const [cx, cz] of [[0, 0], [GW - 2, 0], [0, GD - 2], [GW - 2, GD - 2]]) {
-      for (let dx = 0; dx < 2; dx++)
-        for (let dz = 0; dz < 2; dz++)
-          add(cx + dx, tgy, cz + dz, 'projects');
-    }
-
-    // Tower battlement caps every 5 rows
-    if (i > 0 && i % 5 === 0) {
-      for (const [cx, cz] of [[0, 0], [GW - 2, 0], [0, GD - 2], [GW - 2, GD - 2]]) {
-        add(cx, tgy + 1, cz, 'projects');
-        add(cx + 1, tgy + 1, cz + 1, 'projects');
-      }
-    }
-
-    // Keep shell (hollow 4×4)
-    for (let dx = 0; dx < 4; dx++) {
-      for (let dz = 0; dz < 4; dz++) {
-        const isShell = dx === 0 || dx === 3 || dz === 0 || dz === 3;
-        if (isShell) add(KX + dx, i, KZ + dz, 'preferences');
-      }
-    }
-
-    if (q.length >= n) return q.slice(0, n);
+  for (let gz=1; gz<GD-1; gz+=2) {
+    add(0,    H_WALL, gz, 'people');   // left
+    add(GW-1, H_WALL, gz, 'people');  // right
   }
 
-  return q.slice(0, n);
+  // ── 3. Corner towers (rows H_WALL+1 to H_WALL+TOWER_EXTRA) ──
+  const TCORNERS = [[0,0],[GW-2,0],[0,GD-2],[GW-2,GD-2]];
+  for (let gy=H_WALL+1; gy<=H_WALL+TOWER_EXTRA; gy++) {
+    for (const [cx,cz] of TCORNERS) {
+      for (let dx=0;dx<2;dx++) for (let dz=0;dz<2;dz++) add(cx+dx,gy,cz+dz,'projects');
+    }
+  }
+
+  // ── 4. Tower caps (alternating per tower) ─────────
+  const tcgy = H_WALL + TOWER_EXTRA + 1;
+  for (const [cx,cz] of TCORNERS) {
+    add(cx,   tcgy, cz,   'projects');
+    add(cx+1, tcgy, cz+1, 'projects');
+  }
+
+  // ── 5. Keep shell (rows 0 to H_WALL+4, hollow 3×3) ─
+  const H_KEEP = H_WALL + 5; // shell rows: 0 to H_KEEP-1
+  for (let gy=0; gy<H_KEEP; gy++) {
+    for (let dx=0; dx<KW; dx++) for (let dz=0; dz<KD; dz++) {
+      if (dx===0||dx===KW-1||dz===0||dz===KD-1) add(KX+dx,gy,KZ+dz,'preferences');
+    }
+  }
+
+  // ── 6. Keep cap (solid, 2 rows) ──────────────────
+  for (let gy=H_KEEP; gy<H_KEEP+2; gy++) {
+    for (let dx=0; dx<KW; dx++) for (let dz=0; dz<KD; dz++) add(KX+dx,gy,KZ+dz,'preferences');
+  }
+
+  // ── 7. Spire (2×2, absorbs remainder) ───────────
+  const baseCount = slots.length;
+  const spireStart = H_KEEP+2;
+  const spireRows = Math.floor(Math.max(0, N-baseCount) / 4);
+  for (let gy=spireStart; gy<spireStart+spireRows; gy++) {
+    for (let dx=0; dx<2; dx++) for (let dz=0; dz<2; dz++) add(SPIRE_GX+dx,gy,SPIRE_GZ+dz,'preferences');
+  }
+
+  return slots.slice(0, N);
 }
 
-/* ── Memory data ─────────────────────────────────────── */
+/* ─── memory data ────────────────────────────────── */
 const LABELS = {
-  people:      ['A close friend', 'A mentor', 'A collaborator', 'A co-founder', 'Family', 'A teammate', 'An advisor', 'A teacher', 'An old friend', 'A rival turned ally'],
-  projects:    ['A product shipped', 'An open source tool', 'A side project', 'A design system', 'A startup', 'A prototype', 'A feature launched', 'A thesis'],
-  stories:     ['A memory made', 'A lesson learned hard', 'A risk taken', 'A trip abroad', 'A book that changed me', 'A decision that mattered', 'A breakthrough', 'A failure survived', 'A door opened'],
-  preferences: ['A taste developed', 'A philosophy held', 'A habit built', 'A design principle', 'A strong opinion', 'A ritual kept', 'An aesthetic found'],
+  people:      ['A close friend','A mentor','A collaborator','A co-founder','Family','A teammate','An advisor','A teacher','An old friend','A rival turned ally'],
+  projects:    ['A product shipped','An open source tool','A side project','A design system','A startup','A prototype','A feature launched','A thesis'],
+  stories:     ['A memory made','A lesson learned','A risk taken','A trip abroad','A book that changed me','A decision that mattered','A breakthrough','A failure survived','A door opened'],
+  preferences: ['A taste developed','A philosophy held','A habit built','A design principle','A strong opinion','A ritual kept','An aesthetic found'],
 };
-const MEM_COUNTS = { people: 60, projects: 45, stories: 70, preferences: 55 };
+const MCOUNTS = { people:60, projects:45, stories:70, preferences:55 };
 const memories = [];
-for (const [cat, count] of Object.entries(MEM_COUNTS)) {
+for (const [cat,n] of Object.entries(MCOUNTS)) {
   const lbl = LABELS[cat];
-  for (let i = 0; i < count; i++) memories.push({ cat, label: lbl[i % lbl.length] });
+  for (let i=0;i<n;i++) memories.push({ cat, label:lbl[i%lbl.length] });
 }
 const rShuf = mkRand(314);
-memories.sort(() => rShuf() - 0.5);
+memories.sort(()=>rShuf()-.5);
 
-const N = memories.length; // 230
+const N = memories.length;
 const slots = buildCastleForN(N);
 
-/* ── UI labels ───────────────────────────────────────── */
-function stageLabel(n) {
-  if (n < 50) return 'foundations';
-  if (n < 120) return 'curtain walls rising';
-  if (n < 180) return 'walls standing';
-  if (n < 210) return 'battlements placed';
-  if (n < 300) return 'towers & keep emerging';
-  if (n < 500) return 'fortress taking shape';
-  if (n < 700) return 'stronghold';
-  return 'great fortress';
-}
-document.getElementById('stage').textContent = stageLabel(N);
+/* ─── stage label ────────────────────────────────── */
+const STAGE = N<80?'foundations':N<180?'curtain walls':N<220?'battlements':N<300?'towers & keep':N<500?'fortress':N<800?'stronghold':'great fortress';
+document.getElementById('stage').textContent = STAGE;
 document.getElementById('count').textContent = N + ' memories';
 
-/* ── colors ──────────────────────────────────────────── */
+/* ─── section colors ─────────────────────────────── */
 const SEC_COL = {
-  people:      new THREE.Color(0x6a9cbe),
-  stories:     new THREE.Color(0xbe7848),
-  projects:    new THREE.Color(0x548844),
-  preferences: new THREE.Color(0x8858a8),
+  people:      new THREE.Color(0x5c8cb5),
+  stories:     new THREE.Color(0xb56e3a),
+  projects:    new THREE.Color(0x4a7a38),
+  preferences: new THREE.Color(0x7a50a8),
 };
 
-/* ── instanced mesh ──────────────────────────────────── */
-const bGeo = new THREE.BoxGeometry(BW * 0.90, BH * 0.86, BD * 0.90);
-const bMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.04 });
+/* ─── torch positions (set now that castle is defined) ─ */
+const gateWorldZ = (GATE_GX - GW/2 + 0.5)*BW; // x center of gate
+const frontWallZ = (0 - GD/2 + 0.5)*BD;        // z of front wall
+torchL.position.set(-1.0*BW, 1.2, frontWallZ - 0.4);
+torchR.position.set( 1.0*BW, 1.2, frontWallZ - 0.4);
+
+/* ─── window glow planes on keep ─────────────────── */
+const winMat = new THREE.MeshBasicMaterial({ color:0xff9944, transparent:true, opacity:0.7, side:THREE.DoubleSide });
+const keepCenterX = (KX+1 - GW/2 + 0.5)*BW;
+const keepCenterZ = (KZ+1 - GD/2 + 0.5)*BD;
+for (let gy=1; gy<=5; gy+=2) {
+  const w = new THREE.Mesh(new THREE.PlaneGeometry(0.18,0.26), winMat.clone());
+  w.position.set(keepCenterX, gy*BH + BH*0.3, keepCenterZ - KD*BD*0.5 + 0.04);
+  scene.add(w);
+  const w2 = w.clone();
+  w2.position.set(keepCenterX + KW*BW*0.5 - 0.04, gy*BH + BH*0.3, keepCenterZ);
+  w2.rotation.y = Math.PI/2; scene.add(w2);
+}
+
+/* ─── instanced mesh ─────────────────────────────── */
+const bGeo = new THREE.BoxGeometry(BW*0.90, BH*0.86, BD*0.90);
+const bMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.87, metalness:0.04 });
 const iMesh = new THREE.InstancedMesh(bGeo, bMat, N);
 iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 iMesh.castShadow = true; iMesh.receiveShadow = true;
 scene.add(iMesh);
 
 const dummy = new THREE.Object3D();
-const meta = []; // per-brick metadata
+const meta = [];
 const rCol = mkRand(91);
 
-slots.forEach(({ pos, section }, i) => {
+slots.forEach(({pos,section},i) => {
   const mem = memories[i];
   const base = SEC_COL[section].clone();
-  const v = (rCol() - 0.5) * 0.10;
-  base.r = THREE.MathUtils.clamp(base.r + v, 0.03, 0.95);
-  base.g = THREE.MathUtils.clamp(base.g + v, 0.03, 0.95);
-  base.b = THREE.MathUtils.clamp(base.b + v, 0.03, 0.95);
+  const v = (rCol()-.5)*0.10;
+  base.r = THREE.MathUtils.clamp(base.r+v, 0.03, 0.96);
+  base.g = THREE.MathUtils.clamp(base.g+v, 0.03, 0.96);
+  base.b = THREE.MathUtils.clamp(base.b+v, 0.03, 0.96);
 
-  dummy.position.copy(pos); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+  dummy.position.copy(pos); dummy.scale.set(1,1,1); dummy.updateMatrix();
   iMesh.setMatrixAt(i, dummy.matrix);
   iMesh.setColorAt(i, base);
 
-  meta.push({ label: mem.label, section, basePos: pos.clone(), baseColor: base.clone(), isNew: false });
+  meta.push({ label:mem.label, section, basePos:pos.clone(), baseColor:base.clone() });
 });
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-/* ── daily animation (10% highest bricks) ────────────── */
-const animCount = Math.max(1, Math.ceil(N * 0.10));
-const scored = meta.map((d, i) => ({
-  i, score: d.basePos.y * 100 + hash32(i * 7 + dateSeed) / 0xffffffff,
-})).sort((a, b) => b.score - a.score).slice(0, animCount);
-
-const animItems = [];
-scored.forEach(({ i }, ai) => {
-  meta[i].isNew = true;
-  const d = meta[i];
-
-  // Start high + invisible
-  dummy.position.set(d.basePos.x, d.basePos.y + 16, d.basePos.z);
-  dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+/* ─── entrance animation — all bricks fall on load ── */
+// Stagger: lower bricks fall first, upper last
+// Lower bricks get delay=0, highest brick gets delay=1.5s
+const maxY = Math.max(...meta.map(d=>d.basePos.y));
+const enterItems = meta.map((d,i) => {
+  const t = maxY > 0 ? d.basePos.y / maxY : 0;
+  // Park brick above
+  dummy.position.set(d.basePos.x, d.basePos.y+20, d.basePos.z);
+  dummy.scale.set(1,1,1); dummy.updateMatrix();
   iMesh.setMatrixAt(i, dummy.matrix);
   iMesh.setColorAt(i, new THREE.Color(0x000000));
-
-  animItems.push({
-    idx: i, delay: 1.2 + ai * 0.22, elapsed: 0, phase: 'wait',
-  });
+  return { idx:i, delay: t*1.4, elapsed:0, phase:'wait' };
 });
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-/* ── ember particles ─────────────────────────────────── */
-const PCOUNT = 250;
-const pArr = new Float32Array(PCOUNT * 3);
-for (let i = 0; i < PCOUNT; i++) {
-  pArr[i * 3]     = (Math.random() - 0.5) * 20;
-  pArr[i * 3 + 1] = Math.random() * 12;
-  pArr[i * 3 + 2] = (Math.random() - 0.5) * 15;
+let enterDone = false;
+
+/* ─── daily 10% animation (after entrance) ──────── */
+const animCount = Math.max(1, Math.ceil(N*0.10));
+const scored = meta.map((d,i)=>({ i, score:d.basePos.y*100 + hash32(i*7+dateSeed)/0xffffffff }))
+  .sort((a,b)=>b.score-a.score).slice(0, animCount);
+const dailyItems = scored.map(({i},ai)=>({
+  idx:i, delay:0.3+ai*0.22, elapsed:0, phase:'wait',
+  triggered: false,
+}));
+
+/* ─── stars ─────────────────────────────────────── */
+const SCOUNT = 2000;
+const sPos = new Float32Array(SCOUNT*3);
+const rStar = mkRand(333);
+for (let i=0; i<SCOUNT; i++) {
+  const theta = rStar()*Math.PI*2, phi = Math.acos(rStar()*2-1);
+  const r = 140+rStar()*10;
+  sPos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
+  sPos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+  sPos[i*3+2] = r*Math.cos(phi);
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.BufferAttribute(sPos,3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0xffffff, size:0.3, transparent:true, opacity:0.8, sizeAttenuation:true }));
+scene.add(stars);
+
+/* ─── moon ──────────────────────────────────────── */
+const moonMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(2.5,12,8),
+  new THREE.MeshBasicMaterial({ color:0xdde8f4 })
+);
+moonMesh.position.set(35, 55, -90);
+scene.add(moonMesh);
+
+const moonLight = new THREE.DirectionalLight(0x8899cc, 0);
+moonLight.position.set(35, 55, -90);
+scene.add(moonLight);
+
+/* ─── clouds ────────────────────────────────────── */
+const cloudTex = (() => {
+  const c = document.createElement('canvas'); c.width=512; c.height=256;
+  const ctx = c.getContext('2d');
+  const puffs = [[120,130,80],[220,100,60],[310,140,55],[420,110,65],[80,150,45],[370,120,40],[480,150,35]];
+  puffs.forEach(([x,y,r]) => {
+    const g = ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,'rgba(255,255,255,0.95)');
+    g.addColorStop(0.6,'rgba(255,255,255,0.5)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  });
+  return new THREE.CanvasTexture(c);
+})();
+const cloudPositions = [[-18,22,-35],[12,25,-40],[28,20,-28],[-8,24,-45],[20,18,-20]];
+const clouds = cloudPositions.map(([x,y,z]) => {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:cloudTex, transparent:true, opacity:0.82, depthWrite:false }));
+  sp.scale.set(18, 7, 1);
+  sp.position.set(x, y, z);
+  sp.visible = false; // hidden in dark mode
+  scene.add(sp);
+  return sp;
+});
+
+/* ─── torch flame sprites ───────────────────────── */
+const flameTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32,38,0,32,38,30);
+  g.addColorStop(0,'rgba(255,200,50,0.95)'); g.addColorStop(0.3,'rgba(255,100,20,0.7)'); g.addColorStop(1,'rgba(255,80,0,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,64,64);
+  return new THREE.CanvasTexture(c);
+})();
+const flameMat = new THREE.SpriteMaterial({ map:flameTex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
+const flameL = new THREE.Sprite(flameMat.clone()); flameL.scale.set(0.5,0.65,1);
+flameL.position.copy(torchL.position).y += 0.18;
+const flameR = new THREE.Sprite(flameMat.clone()); flameR.scale.set(0.5,0.65,1);
+flameR.position.copy(torchR.position).y += 0.18;
+scene.add(flameL, flameR);
+
+/* ─── ember particles ───────────────────────────── */
+const PCOUNT = 220;
+const pBuf = new Float32Array(PCOUNT*3);
+for (let i=0; i<PCOUNT; i++) {
+  pBuf[i*3]   = (Math.random()-.5)*18;
+  pBuf[i*3+1] = Math.random()*10;
+  pBuf[i*3+2] = (Math.random()-.5)*12;
 }
 const pGeo = new THREE.BufferGeometry();
-pGeo.setAttribute('position', new THREE.BufferAttribute(pArr, 3));
-scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
-  color: 0xff8844, size: 0.06, transparent: true, opacity: 0.45,
-})));
+pGeo.setAttribute('position', new THREE.BufferAttribute(pBuf,3));
+const embers = new THREE.Points(pGeo, new THREE.PointsMaterial({ color:0xff8844, size:0.06, transparent:true, opacity:0.4 }));
+scene.add(embers);
 
-/* ── hover ───────────────────────────────────────────── */
+/* ─── dark / light mode ─────────────────────────── */
+let isDark = true;
+let modeT = 0;   // 0=dark, 1=light
+let modeTgt = 0;
+const btnEl = document.getElementById('toggle');
+btnEl.addEventListener('click', () => {
+  isDark = !isDark;
+  modeTgt = isDark ? 0 : 1;
+  btnEl.textContent = isDark ? '🌙' : '☀️';
+});
+
+function lerpColor(out, a, b, t) { out.lerpColors(a, b, t); }
+
+/* ─── hover ─────────────────────────────────────── */
 const ray = new THREE.Raycaster();
-const mouse = new THREE.Vector2(-999, -999);
+const mouse = new THREE.Vector2(-999,-999);
 const labelEl = document.getElementById('label');
-let curHover = -1, savedColor = null;
+let curHover = -1, savedHoverColor = null;
+let colorDirty = false;
 
 addEventListener('mousemove', e => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  mouse.x = (e.clientX/innerWidth)*2-1;
+  mouse.y = -(e.clientY/innerHeight)*2+1;
 });
 addEventListener('resize', () => {
-  cam.aspect = innerWidth / innerHeight;
+  cam.aspect = innerWidth/innerHeight;
   cam.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
 });
 
-/* ── render loop ─────────────────────────────────────── */
+/* ─── animation helper ───────────────────────────── */
+function setIMatrix(i, pos, sx=1, sy=1, sz=1) {
+  dummy.position.set(pos.x, pos.y, pos.z);
+  dummy.scale.set(sx,sy,sz); dummy.updateMatrix();
+  iMesh.setMatrixAt(i, dummy.matrix);
+}
+
+/* ─── render loop ────────────────────────────────── */
 const clock = new THREE.Clock();
-let colorDirty = false;
 
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta(), t = clock.getElapsedTime();
   ctrl.update();
 
-  // Torch flicker
-  const flicker = 1.0 + Math.sin(t * 8.3) * 0.15 + Math.sin(t * 13.7) * 0.1;
-  torchL.intensity = torchR.intensity = 3.0 * flicker;
-  keepGlow.intensity = 1.8 * (1.0 + Math.sin(t * 3.1) * 0.1);
+  /* ── mode transition ───────────────────────────── */
+  modeT = THREE.MathUtils.lerp(modeT, modeTgt, dt*1.2);
+  const m = modeT;
 
-  // Particles drift up
-  for (let i = 0; i < PCOUNT; i++) {
-    pArr[i * 3 + 1] += dt * (0.3 + Math.sin(t * 0.3 + i) * 0.12);
-    if (pArr[i * 3 + 1] > 14) pArr[i * 3 + 1] = Math.random() * 1.5;
+  lerpColor(skyUni.top.value,   SKY_DARK.top,   SKY_LIGHT.top,   m);
+  lerpColor(skyUni.horiz.value, SKY_DARK.horiz, SKY_LIGHT.horiz, m);
+  lerpColor(skyUni.bot.value,   SKY_DARK.bot,   SKY_LIGHT.bot,   m);
+
+  // Lights
+  ambient.intensity   = THREE.MathUtils.lerp(2.5, 4.5, m);
+  hemi.intensity      = THREE.MathUtils.lerp(0.7, 1.8, m);
+  mainLight.intensity = THREE.MathUtils.lerp(3.5, 5.0, m);
+  mainLight.color.lerpColors(new THREE.Color(0xffa855), new THREE.Color(0xfff8f0), m);
+  fillLight.intensity = THREE.MathUtils.lerp(0.5, 1.0, m);
+
+  // Dark-only elements
+  const darkAlpha = Math.max(0, 1-m*2.5);
+  stars.material.opacity = darkAlpha * 0.8;
+  moonMesh.material.opacity = darkAlpha; moonMesh.material.transparent = true;
+  moonLight.intensity = darkAlpha * 1.5;
+  torchL.intensity = torchR.intensity = THREE.MathUtils.lerp(4.0, 1.0, m) * (1.0 + Math.sin(t*8.3)*0.15 + Math.sin(t*13.7)*0.1);
+  keepGlow.intensity = THREE.MathUtils.lerp(2.5, 0.8, m) * (1.0 + Math.sin(t*3.1)*0.08);
+  flameL.material.opacity = flameR.material.opacity = THREE.MathUtils.lerp(0.9, 0.3, m);
+
+  // Light-only elements
+  const lightAlpha = Math.max(0, m*2.5-0.5);
+  clouds.forEach((cl,ci) => {
+    cl.visible = lightAlpha > 0.01;
+    cl.material.opacity = lightAlpha * 0.82;
+    cl.position.y = cloudPositions[ci][1] + Math.sin(t*0.18+ci)*0.8;
+    cl.position.x = cloudPositions[ci][0] + Math.sin(t*0.08+ci*1.4)*2.5;
+  });
+
+  // Fog color
+  scene.fog.color.lerpColors(new THREE.Color(0x14090a), new THREE.Color(0x90c0e0), m);
+  renderer.setClearColor(scene.fog.color);
+
+  // Ground tint in light mode
+  gndMat.color.lerpColors(new THREE.Color(0x180e08), new THREE.Color(0x3a5030), m);
+
+  /* ── flame sprite animation ─────────────────────── */
+  const fScale = 0.5 + Math.sin(t*11.2)*0.08 + Math.sin(t*7.3)*0.05;
+  flameL.scale.set(fScale, fScale*1.3, 1);
+  flameR.scale.set(fScale, fScale*1.3, 1);
+
+  /* ── embers ──────────────────────────────────────── */
+  for (let i=0; i<PCOUNT; i++) {
+    pBuf[i*3+1] += dt*(0.28 + Math.sin(t*0.3+i)*0.12);
+    if (pBuf[i*3+1] > 12) pBuf[i*3+1] = Math.random()*1.2;
   }
   pGeo.attributes.position.needsUpdate = true;
 
-  // ── Brick animations ──────────────────────────────────
-  for (const item of animItems) {
-    if (item.phase === 'done') continue;
-    item.elapsed += dt;
-    const d = meta[item.idx];
+  /* ── entrance animation ──────────────────────────── */
+  if (!enterDone) {
+    let allDone = true;
+    for (const item of enterItems) {
+      if (item.phase==='done') continue;
+      allDone = false;
+      item.elapsed += dt;
 
-    if (item.phase === 'wait') {
-      if (item.elapsed >= item.delay) { item.phase = 'fall'; item.elapsed = 0; }
-
-    } else if (item.phase === 'fall') {
-      const p = Math.min(item.elapsed / 1.0, 1);
-      const ease = p < 0.65 ? (p / 0.65) ** 2.2 : 1 - Math.sin((p - 0.65) / 0.35 * Math.PI * 0.5) * 0.04 * (1 - p);
-
-      dummy.position.set(d.basePos.x, d.basePos.y + 16 * (1 - ease), d.basePos.z);
-      dummy.scale.set(1, 1, 1); dummy.updateMatrix();
-      iMesh.setMatrixAt(item.idx, dummy.matrix);
-
-      const f = Math.min(p * 2.0, 1);
-      iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(f));
-      colorDirty = true;
-
-      if (p >= 1) {
-        dummy.position.copy(d.basePos); dummy.updateMatrix();
-        iMesh.setMatrixAt(item.idx, dummy.matrix);
-        iMesh.setColorAt(item.idx, d.baseColor);
-        item.phase = 'squash'; item.elapsed = 0;
+      if (item.phase==='wait') {
+        if (item.elapsed>=item.delay) { item.phase='fall'; item.elapsed=0; }
+      } else if (item.phase==='fall') {
+        const p = Math.min(item.elapsed/0.6, 1);
+        const ease = p<0.65 ? (p/0.65)**2.2 : 1 - Math.sin((p-0.65)/0.35*Math.PI*.5)*.03*(1-p);
+        const d = meta[item.idx];
+        setIMatrix(item.idx, new THREE.Vector3(d.basePos.x, d.basePos.y+20*(1-ease), d.basePos.z));
+        iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(Math.min(p*2,1)));
+        colorDirty = true;
+        if (p>=1) {
+          setIMatrix(item.idx, d.basePos); iMesh.setColorAt(item.idx, d.baseColor);
+          item.phase='squash'; item.elapsed=0;
+        }
+      } else if (item.phase==='squash') {
+        const p = Math.min(item.elapsed/0.15,1);
+        const sx = p<0.4?1+0.2*(p/.4):1.2-0.2*((p-.4)/.6);
+        const sy = p<0.4?1-0.24*(p/.4):0.76+0.24*((p-.4)/.6);
+        const d = meta[item.idx];
+        setIMatrix(item.idx, d.basePos, sx, Math.max(sy,.25), sx);
+        if (p>=1) { setIMatrix(item.idx, d.basePos); item.phase='done'; }
       }
-
-    } else if (item.phase === 'squash') {
-      const p = Math.min(item.elapsed / 0.18, 1);
-      const sx = p < 0.4 ? 1 + 0.18 * (p / 0.4) : 1.18 - 0.18 * ((p - 0.4) / 0.6);
-      const sy = p < 0.4 ? 1 - 0.22 * (p / 0.4) : 0.78 + 0.22 * ((p - 0.4) / 0.6);
-      dummy.position.copy(d.basePos);
-      dummy.scale.set(sx, Math.max(sy, 0.3), sx); dummy.updateMatrix();
-      iMesh.setMatrixAt(item.idx, dummy.matrix);
-      if (p >= 1) {
-        dummy.scale.set(1, 1, 1); dummy.position.copy(d.basePos);
-        dummy.updateMatrix(); iMesh.setMatrixAt(item.idx, dummy.matrix);
-        item.phase = 'glow'; item.elapsed = 0;
-      }
-
-    } else if (item.phase === 'glow') {
-      const p = Math.min(item.elapsed / 0.55, 1);
-      const glow = Math.sin(p * Math.PI) * 0.85;
-      iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
-      colorDirty = true;
-      if (p >= 1) {
-        iMesh.setColorAt(item.idx, d.baseColor);
-        item.phase = 'done';
-      }
+      iMesh.instanceMatrix.needsUpdate = true;
     }
-    iMesh.instanceMatrix.needsUpdate = true;
+    if (allDone) enterDone = true;
   }
-  if (colorDirty) { iMesh.instanceColor.needsUpdate = true; colorDirty = false; }
 
-  // ── Hover ─────────────────────────────────────────────
+  /* ── daily 10% animation (runs after entrance) ──── */
+  if (enterDone) {
+    for (const item of dailyItems) {
+      if (item.phase==='done') continue;
+      if (!item.triggered) { item.elapsed+=dt; if (item.elapsed<item.delay) continue; item.triggered=true; item.elapsed=0; }
+      else item.elapsed+=dt;
+
+      const d = meta[item.idx];
+      if (item.phase==='wait') { item.phase='glow'; item.elapsed=0; }
+      else if (item.phase==='glow') {
+        const p = Math.min(item.elapsed/0.8,1);
+        const glow = Math.sin(p*Math.PI)*0.9;
+        iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
+        colorDirty = true;
+        if (p>=1) { iMesh.setColorAt(item.idx, d.baseColor); item.phase='done'; }
+      }
+      iMesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  if (colorDirty) { iMesh.instanceColor.needsUpdate=true; colorDirty=false; }
+
+  /* ── hover ───────────────────────────────────────── */
   ray.setFromCamera(mouse, cam);
   const hits = ray.intersectObject(iMesh);
-  let hi = hits.length > 0 ? hits[0].instanceId : -1;
+  const hi = hits.length>0 ? hits[0].instanceId : -1;
 
   if (hi !== curHover) {
-    // Restore old
-    if (curHover >= 0 && savedColor) {
-      iMesh.setColorAt(curHover, savedColor);
-      iMesh.instanceColor.needsUpdate = true;
+    if (curHover>=0 && savedHoverColor) {
+      iMesh.setColorAt(curHover, savedHoverColor);
+      iMesh.instanceColor.needsUpdate=true;
     }
-    curHover = hi; savedColor = null;
-
-    if (hi >= 0 && meta[hi]) {
-      const c = new THREE.Color();
-      iMesh.getColorAt(hi, c);
-      savedColor = c.clone();
-      iMesh.setColorAt(hi, c.clone().lerp(new THREE.Color(0xffffff), 0.5));
-      iMesh.instanceColor.needsUpdate = true;
-
-      labelEl.textContent = meta[hi].label;
-      labelEl.style.opacity = '1';
-      document.body.style.cursor = 'pointer';
+    curHover=hi; savedHoverColor=null;
+    if (hi>=0 && meta[hi]) {
+      const c=new THREE.Color(); iMesh.getColorAt(hi,c);
+      savedHoverColor=c.clone();
+      iMesh.setColorAt(hi, c.lerp(new THREE.Color(0xffffff),0.5));
+      iMesh.instanceColor.needsUpdate=true;
+      labelEl.textContent=meta[hi].label; labelEl.style.opacity='1';
+      document.body.style.cursor='pointer';
     } else {
-      labelEl.style.opacity = '0';
-      document.body.style.cursor = 'default';
+      labelEl.style.opacity='0';
+      document.body.style.cursor='default';
     }
   }
 
-  renderer.render(scene, cam);
+  renderer.render(scene,cam);
 });
+
+
 </script>
 </body>
 </html>
