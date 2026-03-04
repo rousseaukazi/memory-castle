@@ -408,26 +408,7 @@ const keepCapRow = (H_WALL+5) + 1;
 addKeepCone(KX, KZ, KW, KD, keepCapRow, 1.1, 0x8844cc);
 
 // Spire cone (top of spire rows if any)
-const base0 = buildCastleForN(N).length; // actual base count
-const nSlots = slots.length;
 const spireStart = (H_WALL+5)+2;
-const spireRows = Math.floor(Math.max(0, N - (nSlots - Math.max(0,N-buildCastleForN(N).length+Math.floor(Math.max(0,N-(()=>{
-  // recalculate base without spire
-  let cnt=0;
-  for(let gy=0;gy<H_WALL;gy++){
-    for(let gx=0;gx<GW;gx++) if(!(gx>=GATE_GX&&gx<GATE_GX+GATE_W&&gy<=1)) cnt++;
-    cnt+=GW; cnt+=2*(GD-2); cnt+=2*(GD-2);
-  }
-  for(let gx=0;gx<GW;gx+=2) cnt+=2;
-  for(let gz=1;gz<GD-1;gz+=2) cnt+=2;
-  const H_KEEP=H_WALL+5;
-  cnt+=4*4*TOWER_EXTRA + 4*2;
-  cnt+=H_KEEP*2*(KW+KD-2);
-  cnt+=KW*KD*2;
-  return cnt;
-})()))*4))/ 4);
-
-// Simpler: just count from the actual slots array
 const actualBaseCount = (() => {
   let cnt=0;
   for(let gy=0;gy<H_WALL;gy++){
