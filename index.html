@@ -127,7 +127,9 @@ sun.shadow.camera.right = sun.shadow.camera.top = 18;
 sun.shadow.radius = 3; sun.shadow.bias = -0.001;
 scene.add(sun);
 
-scene.add(Object.assign(new THREE.DirectionalLight(0x2a3a5c, 0.6), { position: new THREE.Vector3(-10, 6, -14) }));
+const moonFill = new THREE.DirectionalLight(0x2a3a5c, 0.6);
+moonFill.position.set(-10, 6, -14);
+scene.add(moonFill);
 
 /* ── constants ───────────────────────────────────────── */
 const BW = 0.60, BH = 0.38, BD = 0.55;
