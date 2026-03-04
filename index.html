@@ -358,7 +358,11 @@ for (let gy=1; gy<=5; gy+=2) {
 
 /* ─── instanced mesh ─────────────────────────────── */
 const bGeo = new THREE.BoxGeometry(BW*0.90, BH*0.86, BD*0.90);
-const bMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.87, metalness:0.04 });
+// emissive ensures bricks are ALWAYS visible regardless of light angle
+const bMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff, roughness: 0.82, metalness: 0.04,
+  emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.35,
+});
 const iMesh = new THREE.InstancedMesh(bGeo, bMat, N);
 iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 iMesh.castShadow = true; iMesh.receiveShadow = true;
@@ -385,21 +389,24 @@ slots.forEach(({pos,section},i) => {
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-/* ─── entrance animation — all bricks fall on load ── */
-// Stagger: lower bricks fall first, upper last
-// Lower bricks get delay=0, highest brick gets delay=1.5s
+/* ─── entrance animation — bricks fade in from black ─
+   Bricks stay at their CORRECT positions the whole time;
+   only the color fades from black → full. Lower bricks
+   appear first, upper bricks last. No position bugs possible. */
 const maxY = Math.max(...meta.map(d=>d.basePos.y));
-const enterItems = meta.map((d,i) => {
-  const t = maxY > 0 ? d.basePos.y / maxY : 0;
-  // Park brick above
-  dummy.position.set(d.basePos.x, d.basePos.y+20, d.basePos.z);
-  dummy.scale.set(1,1,1); dummy.updateMatrix();
-  iMesh.setMatrixAt(i, dummy.matrix);
-  iMesh.setColorAt(i, new THREE.Color(0x000000));
-  return { idx:i, delay: t*1.4, elapsed:0, phase:'wait' };
-});
-iMesh.instanceMatrix.needsUpdate = true;
+// Start all bricks black
+meta.forEach((d,i) => iMesh.setColorAt(i, new THREE.Color(0x000000)));
 iMesh.instanceColor.needsUpdate = true;
+
+const ENTER_STAGGER = 1.4;  // total stagger window in seconds
+const ENTER_FADE    = 0.45; // fade duration per brick
+
+const enterItems = meta.map((d,i) => ({
+  idx: i,
+  delay: maxY > 0 ? (d.basePos.y / maxY) * ENTER_STAGGER : 0,
+  elapsed: 0,
+  done: false,
+}));
 
 let enterDone = false;
 
@@ -593,57 +600,37 @@ renderer.setAnimationLoop(() => {
   }
   pGeo.attributes.position.needsUpdate = true;
 
-  /* ── entrance animation ──────────────────────────── */
+  /* ── entrance animation — simple fade in ────────── */
+  // Bricks never move; only their color fades from black to full.
+  // This is bulletproof: no matrix manipulation, no position bugs.
   if (!enterDone) {
     let allDone = true;
     for (const item of enterItems) {
-      if (item.phase==='done') continue;
+      if (item.done) continue;
       allDone = false;
       item.elapsed += dt;
-
-      if (item.phase==='wait') {
-        if (item.elapsed>=item.delay) { item.phase='fall'; item.elapsed=0; }
-      } else if (item.phase==='fall') {
-        const p = Math.min(item.elapsed/0.6, 1);
-        const ease = p<0.65 ? (p/0.65)**2.2 : 1 - Math.sin((p-0.65)/0.35*Math.PI*.5)*.03*(1-p);
-        const d = meta[item.idx];
-        setIMatrix(item.idx, new THREE.Vector3(d.basePos.x, d.basePos.y+20*(1-ease), d.basePos.z));
-        iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(Math.min(p*2,1)));
-        colorDirty = true;
-        if (p>=1) {
-          setIMatrix(item.idx, d.basePos); iMesh.setColorAt(item.idx, d.baseColor);
-          item.phase='squash'; item.elapsed=0;
-        }
-      } else if (item.phase==='squash') {
-        const p = Math.min(item.elapsed/0.15,1);
-        const sx = p<0.4?1+0.2*(p/.4):1.2-0.2*((p-.4)/.6);
-        const sy = p<0.4?1-0.24*(p/.4):0.76+0.24*((p-.4)/.6);
-        const d = meta[item.idx];
-        setIMatrix(item.idx, d.basePos, sx, Math.max(sy,.25), sx);
-        if (p>=1) { setIMatrix(item.idx, d.basePos); item.phase='done'; }
-      }
-      iMesh.instanceMatrix.needsUpdate = true;
+      if (item.elapsed < item.delay) continue; // still waiting
+      const p = Math.min((item.elapsed - item.delay) / ENTER_FADE, 1);
+      const d = meta[item.idx];
+      iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(p));
+      colorDirty = true;
+      if (p >= 1) { iMesh.setColorAt(item.idx, d.baseColor); item.done = true; }
     }
-    if (allDone) enterDone = true;
+    if (allDone) { enterDone = true; iMesh.instanceColor.needsUpdate = true; }
   }
 
-  /* ── daily 10% animation (runs after entrance) ──── */
+  /* ── daily 10% glow animation (runs after entrance) ─ */
   if (enterDone) {
     for (const item of dailyItems) {
       if (item.phase==='done') continue;
-      if (!item.triggered) { item.elapsed+=dt; if (item.elapsed<item.delay) continue; item.triggered=true; item.elapsed=0; }
-      else item.elapsed+=dt;
-
+      item.elapsed += dt;
+      if (item.elapsed < item.delay) continue;
+      const p = Math.min((item.elapsed - item.delay) / 0.9, 1);
+      const glow = Math.sin(p * Math.PI) * 0.85;
       const d = meta[item.idx];
-      if (item.phase==='wait') { item.phase='glow'; item.elapsed=0; }
-      else if (item.phase==='glow') {
-        const p = Math.min(item.elapsed/0.8,1);
-        const glow = Math.sin(p*Math.PI)*0.9;
-        iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
-        colorDirty = true;
-        if (p>=1) { iMesh.setColorAt(item.idx, d.baseColor); item.phase='done'; }
-      }
-      iMesh.instanceMatrix.needsUpdate = true;
+      iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
+      colorDirty = true;
+      if (p >= 1) { iMesh.setColorAt(item.idx, d.baseColor); item.phase = 'done'; }
     }
   }
 
