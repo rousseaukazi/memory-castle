@@ -88,7 +88,7 @@ renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.15;
 document.body.appendChild(renderer.domElement);
 
 /* ─── scene ─────────────────────────────────────── */
@@ -128,27 +128,36 @@ ctrl.minDistance = 6; ctrl.maxDistance = 40;
 const BW=0.60, BH=0.38, BD=0.55;
 
 /* ─── lights ─────────────────────────────────────── */
-// Shared ambient
-const ambient = new THREE.AmbientLight(0x201008, 2.5);
+// Camera is at (-4, 10, -16) → castle front faces TOWARD -Z (camera side)
+// All key lights must be on the -Z / front side to illuminate visible faces.
+
+// Ambient: cool dark blue — enough to read the castle in shadow
+const ambient = new THREE.AmbientLight(0x1a2235, 5.5);
 scene.add(ambient);
-const hemi = new THREE.HemisphereLight(0x3a2010, 0x050306, 0.7);
+const hemi = new THREE.HemisphereLight(0x2a3a5c, 0x100a06, 1.2);
 scene.add(hemi);
 
-// Main sun (light mode) / moon (dark mode) direction light
-const mainLight = new THREE.DirectionalLight(0xffa855, 3.5);
-mainLight.position.set(12,26,10);
+// Moon key light: front-left, high — primary illumination of castle faces
+// Position is in front of the castle (negative Z) so front walls are lit
+const mainLight = new THREE.DirectionalLight(0x8090c8, 3.5);
+mainLight.position.set(-14, 30, -20);
 mainLight.castShadow = true;
 mainLight.shadow.mapSize.set(4096,4096);
-mainLight.shadow.camera.near = 0.5; mainLight.shadow.camera.far = 60;
-mainLight.shadow.camera.left = mainLight.shadow.camera.bottom = -15;
-mainLight.shadow.camera.right = mainLight.shadow.camera.top = 15;
+mainLight.shadow.camera.near = 0.5; mainLight.shadow.camera.far = 80;
+mainLight.shadow.camera.left = mainLight.shadow.camera.bottom = -18;
+mainLight.shadow.camera.right = mainLight.shadow.camera.top = 18;
 mainLight.shadow.radius = 3; mainLight.shadow.bias = -0.001;
 scene.add(mainLight);
 
-// Fill
-const fillLight = new THREE.DirectionalLight(0x2a3a6c, 0.5);
-fillLight.position.set(-10,6,-14);
+// Front fill: from camera-right side, warm — softens moon shadows
+const fillLight = new THREE.DirectionalLight(0xc0a070, 1.2);
+fillLight.position.set(12, 10, -22);
 scene.add(fillLight);
+
+// Rim: from behind/above — silhouettes tower tops
+const rimLight = new THREE.DirectionalLight(0x405080, 0.8);
+rimLight.position.set(8, 24, 14);
+scene.add(rimLight);
 
 // Torches at gate (computed after castle, positioned below)
 const torchL = new THREE.PointLight(0xff7722, 4.0, 6);
@@ -537,11 +546,15 @@ renderer.setAnimationLoop(() => {
   lerpColor(skyUni.bot.value,   SKY_DARK.bot,   SKY_LIGHT.bot,   m);
 
   // Lights
-  ambient.intensity   = THREE.MathUtils.lerp(2.5, 4.5, m);
-  hemi.intensity      = THREE.MathUtils.lerp(0.7, 1.8, m);
-  mainLight.intensity = THREE.MathUtils.lerp(3.5, 5.0, m);
-  mainLight.color.lerpColors(new THREE.Color(0xffa855), new THREE.Color(0xfff8f0), m);
-  fillLight.intensity = THREE.MathUtils.lerp(0.5, 1.0, m);
+  ambient.color.lerpColors(new THREE.Color(0x1a2235), new THREE.Color(0x3a3020), m);
+  ambient.intensity   = THREE.MathUtils.lerp(5.5, 7.0, m);
+  hemi.intensity      = THREE.MathUtils.lerp(1.2, 2.5, m);
+  mainLight.intensity = THREE.MathUtils.lerp(3.5, 6.0, m);
+  mainLight.color.lerpColors(new THREE.Color(0x8090c8), new THREE.Color(0xfff8e8), m);
+  mainLight.position.lerpVectors(new THREE.Vector3(-14,30,-20), new THREE.Vector3(18,34,14), m);
+  fillLight.intensity = THREE.MathUtils.lerp(1.2, 2.0, m);
+  fillLight.color.lerpColors(new THREE.Color(0xc0a070), new THREE.Color(0xffeedd), m);
+  rimLight.intensity  = THREE.MathUtils.lerp(0.8, 0.3, m);
 
   // Dark-only elements
   const darkAlpha = Math.max(0, 1-m*2.5);
