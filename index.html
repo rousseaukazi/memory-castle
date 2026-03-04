@@ -8,10 +8,9 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { overflow:hidden; background:#060408; }
 canvas { display:block; }
-
 #label {
   position:fixed; bottom:36px; left:50%; transform:translateX(-50%);
-  background:rgba(10,6,4,0.75); backdrop-filter:blur(18px);
+  background:rgba(10,6,4,0.8); backdrop-filter:blur(18px);
   color:#f5e8c8; padding:10px 30px; border-radius:24px;
   font:12px/1 'Georgia',serif; letter-spacing:2.5px; text-transform:uppercase;
   pointer-events:none; opacity:0; transition:opacity 0.2s;
@@ -35,15 +34,17 @@ canvas { display:block; }
 }
 #toggle {
   position:fixed; top:20px; right:20px; z-index:30;
-  width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,0.18);
+  width:38px; height:38px; border-radius:50%;
+  border:1px solid rgba(255,255,255,0.18);
   background:rgba(255,255,255,0.09); backdrop-filter:blur(12px);
-  cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:18px; display:flex;
+  align-items:center; justify-content:center;
   transition:background 0.3s; user-select:none;
 }
 #toggle:hover { background:rgba(255,255,255,0.18); }
 #vignette {
   position:fixed; inset:0; pointer-events:none; z-index:10;
-  background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+  background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.65) 100%);
 }
 </style>
 </head>
@@ -59,7 +60,7 @@ canvas { display:block; }
 window.onerror = (m,s,l) => {
   const t = document.getElementById('title');
   t.textContent = 'Error (line '+l+'): '+m;
-  t.style.color = '#ff6666';
+  t.style.color='#ff6666';
 };
 </script>
 <script type="importmap">
@@ -72,296 +73,245 @@ window.onerror = (m,s,l) => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-/* ─── helpers ───────────────────────────────────── */
-function mkRand(seed) {
-  let s = (seed ^ 0xdeadbeef) >>> 0;
-  return () => { s = (Math.imul(s,1664525)+1013904223)>>>0; return s/0x100000000; };
+/* ─── utils ──────────────────────────────────────── */
+function mkRand(seed){
+  let s=(seed^0xdeadbeef)>>>0;
+  return ()=>{ s=(Math.imul(s,1664525)+1013904223)>>>0; return s/0x100000000; };
 }
 const today = new Date();
 const dateSeed = today.getFullYear()*10000+(today.getMonth()+1)*100+today.getDate();
-function hash32(v){ v=(v^61)^(v>>>16); v+=v<<3; v^=v>>>4; v=Math.imul(v,0x27d4eb2d); return (v^(v>>>15))>>>0; }
+function hash32(v){ v=(v^61)^(v>>>16); v+=v<<3; v^=v>>>4; v=Math.imul(v,0x27d4eb2d); return(v^(v>>>15))>>>0; }
 
-/* ─── renderer ──────────────────────────────────── */
+/* ─── renderer ───────────────────────────────────── */
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 0.90;
 document.body.appendChild(renderer.domElement);
 
-/* ─── scene ─────────────────────────────────────── */
+/* ─── scene ──────────────────────────────────────── */
 const scene = new THREE.Scene();
 
-/* ─── sky shader (dark ↔ light mode) ────────────── */
-const SKY_DARK  = { top: new THREE.Color(0x060d18), horiz: new THREE.Color(0x1a0c04), bot: new THREE.Color(0x040204) };
-const SKY_LIGHT = { top: new THREE.Color(0x1a4a8a), horiz: new THREE.Color(0x70aad8), bot: new THREE.Color(0x90c4b8) };
-
+/* ─── sky ─────────────────────────────────────────── */
+const SKY_DARK  = { top:new THREE.Color(0x050a14), horiz:new THREE.Color(0x18100a), bot:new THREE.Color(0x030205) };
+const SKY_LIGHT = { top:new THREE.Color(0x1a4a8a), horiz:new THREE.Color(0x70aad8), bot:new THREE.Color(0x90c4b8) };
 const skyUni = {
-  top:   { value: SKY_DARK.top.clone() },
-  horiz: { value: SKY_DARK.horiz.clone() },
-  bot:   { value: SKY_DARK.bot.clone() },
+  top:  { value: SKY_DARK.top.clone() },
+  horiz:{ value: SKY_DARK.horiz.clone() },
+  bot:  { value: SKY_DARK.bot.clone() },
 };
 const skyMat = new THREE.ShaderMaterial({
   uniforms: skyUni,
-  vertexShader:   `varying float vY; void main(){ vY=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  vertexShader: `varying float vY; void main(){ vY=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
   fragmentShader: `uniform vec3 top,horiz,bot; varying float vY;
     void main(){ float t=clamp(vY,-1.,1.);
       vec3 c=t>0.?mix(horiz,top,pow(t,.5)):mix(horiz,bot,-t*2.);
       gl_FragColor=vec4(c,1.); }`,
-  side: THREE.BackSide, depthWrite:false,
+  side:THREE.BackSide, depthWrite:false,
 });
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(160,24,12), skyMat));
 
-/* ─── camera (front-facing, slight angle) ───────── */
-const cam = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 180);
-cam.position.set(-4, 10, -16);
-
+/* ─── camera ──────────────────────────────────────── */
+const cam = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 180);
+cam.position.set(-5, 9, -18);
 const ctrl = new OrbitControls(cam, renderer.domElement);
 ctrl.enableDamping = true; ctrl.dampingFactor = 0.07;
 ctrl.target.set(0, 2.5, 0);
 ctrl.minPolarAngle = Math.PI/9; ctrl.maxPolarAngle = Math.PI/2.1;
-ctrl.minDistance = 6; ctrl.maxDistance = 40;
+ctrl.minDistance = 6; ctrl.maxDistance = 45;
 
-/* ─── brick constants ───────────────────────────── */
+/* ─── brick constants ─────────────────────────────── */
 const BW=0.60, BH=0.38, BD=0.55;
 
-/* ─── lights ─────────────────────────────────────── */
-// Camera is at (-4, 10, -16) → castle front faces TOWARD -Z (camera side)
-// All key lights must be on the -Z / front side to illuminate visible faces.
-
-// Ambient: cool dark blue — enough to read the castle in shadow
-const ambient = new THREE.AmbientLight(0x1a2235, 5.5);
+/* ─── lighting ────────────────────────────────────── */
+// Ambient: cool night sky, LOW intensity
+const ambient = new THREE.AmbientLight(0x080c18, 3.0);
 scene.add(ambient);
-const hemi = new THREE.HemisphereLight(0x2a3a5c, 0x100a06, 1.2);
+const hemi = new THREE.HemisphereLight(0x182040, 0x100608, 1.5);
 scene.add(hemi);
 
-// Moon key light: front-left, high — primary illumination of castle faces
-// Position is in front of the castle (negative Z) so front walls are lit
-const mainLight = new THREE.DirectionalLight(0x8090c8, 3.5);
-mainLight.position.set(-14, 30, -20);
-mainLight.castShadow = true;
-mainLight.shadow.mapSize.set(4096,4096);
-mainLight.shadow.camera.near = 0.5; mainLight.shadow.camera.far = 80;
-mainLight.shadow.camera.left = mainLight.shadow.camera.bottom = -18;
-mainLight.shadow.camera.right = mainLight.shadow.camera.top = 18;
-mainLight.shadow.radius = 3; mainLight.shadow.bias = -0.001;
-scene.add(mainLight);
+// Moon: front-left high, cold blue — primary illumination of all faces
+// Position at negative Z = in front of castle = illuminates front-facing walls
+const moonKey = new THREE.DirectionalLight(0x9aaccc, 2.8);
+moonKey.position.set(-18, 32, -22);
+moonKey.castShadow = true;
+moonKey.shadow.mapSize.set(2048,2048);
+moonKey.shadow.camera.near = 0.5; moonKey.shadow.camera.far = 70;
+moonKey.shadow.camera.left = moonKey.shadow.camera.bottom = -18;
+moonKey.shadow.camera.right = moonKey.shadow.camera.top = 18;
+moonKey.shadow.radius = 2; moonKey.shadow.bias = -0.001;
+scene.add(moonKey);
 
-// Front fill: from camera-right side, warm — softens moon shadows
-const fillLight = new THREE.DirectionalLight(0xc0a070, 1.2);
-fillLight.position.set(12, 10, -22);
-scene.add(fillLight);
+// Warm fill: front-right, low intensity — gives warmth to castle faces
+const warmFill = new THREE.DirectionalLight(0xc09060, 0.9);
+warmFill.position.set(14, 8, -20);
+scene.add(warmFill);
 
-// Rim: from behind/above — silhouettes tower tops
-const rimLight = new THREE.DirectionalLight(0x405080, 0.8);
-rimLight.position.set(8, 24, 14);
+// Back rim: behind/above — silhouettes tower tops
+const rimLight = new THREE.DirectionalLight(0x304868, 0.5);
+rimLight.position.set(8, 22, 18);
 scene.add(rimLight);
 
-// Torches at gate (computed after castle, positioned below)
-const torchL = new THREE.PointLight(0xff7722, 4.0, 6);
-const torchR = new THREE.PointLight(0xff7722, 4.0, 6);
+// Torches and keep glow (positioned after castle is built)
+const torchL = new THREE.PointLight(0xff8833, 5.0, 7);
+const torchR = new THREE.PointLight(0xff8833, 5.0, 7);
 scene.add(torchL, torchR);
-
-// Keep interior glow
-const keepGlow = new THREE.PointLight(0xff9944, 2.5, 8);
-keepGlow.position.set(0, 1.8, 0);
+const keepGlow = new THREE.PointLight(0xff9944, 3.5, 10);
 scene.add(keepGlow);
 
-/* ─── fog ───────────────────────────────────────── */
-scene.fog = new THREE.FogExp2(new THREE.Color(0x14090a), 0.007);
+/* ─── fog ─────────────────────────────────────────── */
+scene.fog = new THREE.FogExp2(new THREE.Color(0x10080c), 0.006);
 
-/* ─── ground ─────────────────────────────────────── */
-const gndTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#110a06'; ctx.fillRect(0,0,256,256);
-  const g = mkRand(7);
-  for (let i = 0; i < 700; i++) {
-    const v=(g()-.5)*18;
+/* ─── ground ──────────────────────────────────────── */
+const gndTex = (()=>{
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#0e0906'; ctx.fillRect(0,0,256,256);
+  const g=mkRand(7);
+  for(let i=0;i<600;i++){
+    const v=(g()-.5)*16;
     ctx.fillStyle=`rgba(${48+v|0},${36+v|0},${26+v|0},0.4)`;
     ctx.fillRect(g()*256,g()*256,2,2);
   }
-  ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=1;
-  for (let x=0;x<256;x+=28) ctx.strokeRect(x,0,28,256);
-  for (let y=0;y<256;y+=28) ctx.strokeRect(0,y,256,28);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10,10);
+  const t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(10,10);
   return t;
 })();
-const gndMat = new THREE.MeshStandardMaterial({ map:gndTex, roughness:0.98, color:0x180e08 });
+const gndMat = new THREE.MeshStandardMaterial({ map:gndTex, roughness:0.99, color:0x140d08 });
 const gnd = new THREE.Mesh(new THREE.PlaneGeometry(100,100), gndMat);
-gnd.rotation.x = -Math.PI/2; gnd.position.y = -0.02; gnd.receiveShadow = true;
+gnd.rotation.x=-Math.PI/2; gnd.position.y=-0.02; gnd.receiveShadow=true;
 scene.add(gnd);
 
 // Plinth
 const plinth = new THREE.Mesh(
-  new THREE.BoxGeometry(6.2,0.4,4.2),
-  new THREE.MeshStandardMaterial({ color:0x180e08, roughness:0.96 })
+  new THREE.BoxGeometry(6.4,0.35,4.4),
+  new THREE.MeshStandardMaterial({ color:0x1a0f08, roughness:0.96 })
 );
-plinth.position.y = -0.2; plinth.castShadow = true; plinth.receiveShadow = true;
+plinth.position.y=-0.18; plinth.castShadow=true; plinth.receiveShadow=true;
 scene.add(plinth);
 
-// Moat (ShapeGeometry with rectangular hole)
+// Moat
 const moatShape = new THREE.Shape();
 moatShape.moveTo(-8,-5.5); moatShape.lineTo(8,-5.5); moatShape.lineTo(8,5.5); moatShape.lineTo(-8,5.5); moatShape.lineTo(-8,-5.5);
 const moatHole = new THREE.Path();
-moatHole.moveTo(-3.6,-2.4); moatHole.lineTo(3.6,-2.4); moatHole.lineTo(3.6,2.4); moatHole.lineTo(-3.6,2.4); moatHole.lineTo(-3.6,-2.4);
+moatHole.moveTo(-3.8,-2.5); moatHole.lineTo(3.8,-2.5); moatHole.lineTo(3.8,2.5); moatHole.lineTo(-3.8,2.5); moatHole.lineTo(-3.8,-2.5);
 moatShape.holes.push(moatHole);
 const moatMesh = new THREE.Mesh(
-  new THREE.ShapeGeometry(moatShape, 3),
-  new THREE.MeshStandardMaterial({ color:0x182840, roughness:0.05, metalness:0.92, transparent:true, opacity:0.88 })
+  new THREE.ShapeGeometry(moatShape,3),
+  new THREE.MeshStandardMaterial({ color:0x14263c, roughness:0.04, metalness:0.92, transparent:true, opacity:0.90 })
 );
-moatMesh.rotation.x = -Math.PI/2; moatMesh.position.y = -0.06;
+moatMesh.rotation.x=-Math.PI/2; moatMesh.position.y=-0.06;
 scene.add(moatMesh);
 
 /* ══════════════════════════════════════════════════
-   CASTLE BLUEPRINT — always a complete palace
-   Given N bricks, returns exactly N positions forming
-   a proportionally finished castle + spire.
+   CASTLE BLUEPRINT
+   H_WALL=2  → short curtain walls (lets towers dominate)
+   TOWER_EXTRA=4 → towers ~4× taller than walls (dramatic)
    ══════════════════════════════════════════════════ */
-
-// Fixed footprint for current N=230 (extend for larger N later)
 const GW=8, GD=6;
-const GATE_GX=3, GATE_W=2;         // gate: gx=3,4 on front wall
-const H_WALL=3;                      // curtain wall height (rows 0–2)
-const TOWER_EXTRA=3;                 // tower rows above wall battlements
-const KX=2, KZ=2, KW=3, KD=3;      // keep position + size (3×3 hollow)
-const SPIRE_GX=3, SPIRE_GZ=3;       // spire: 2×2 centered on keep
+const GATE_GX=3, GATE_W=2;
+const H_WALL=2;
+const TOWER_EXTRA=4;
+const KX=2, KZ=2, KW=3, KD=3;
+const SPIRE_GX=3, SPIRE_GZ=3;
 
-function castlePos(gx,gy,gz) {
+function brickPos(gx,gy,gz){
   return new THREE.Vector3(
-    (gx - GW/2 + 0.5)*BW + (gy%2)*BW*0.5,
+    (gx-GW/2+0.5)*BW + (gy%2)*BW*0.5,
     gy*BH,
-    (gz - GD/2 + 0.5)*BD
+    (gz-GD/2+0.5)*BD
   );
 }
 
-function buildCastleForN(N) {
-  const slots = [];
-  const add = (gx,gy,gz,sec) => slots.push({ pos: castlePos(gx,gy,gz), section:sec });
+function buildCastleForN(N){
+  const slots=[];
+  const add=(gx,gy,gz,sec)=>slots.push({pos:brickPos(gx,gy,gz), section:sec});
 
-  // ── 1. Curtain walls (rows 0 to H_WALL-1) ────────
-  for (let gy=0; gy<H_WALL; gy++) {
-    // Front (gz=0): gate gap at rows 0-1
-    for (let gx=0; gx<GW; gx++) {
-      if (!(gx>=GATE_GX && gx<GATE_GX+GATE_W && gy<=1)) add(gx,gy,0,'stories');
+  // 1. Curtain walls
+  for(let gy=0;gy<H_WALL;gy++){
+    for(let gx=0;gx<GW;gx++){
+      if(!(gx>=GATE_GX&&gx<GATE_GX+GATE_W&&gy<=1)) add(gx,gy,0,'stories');
     }
-    // Back (gz=GD-1)
-    for (let gx=0; gx<GW; gx++) add(gx,gy,GD-1,'stories');
-    // Left (gx=0, inner z)
-    for (let gz=1; gz<GD-1; gz++) add(0,gy,gz,'people');
-    // Right (gx=GW-1, inner z)
-    for (let gz=1; gz<GD-1; gz++) add(GW-1,gy,gz,'people');
+    for(let gx=0;gx<GW;gx++) add(gx,gy,GD-1,'stories');
+    for(let gz=1;gz<GD-1;gz++) add(0,gy,gz,'people');
+    for(let gz=1;gz<GD-1;gz++) add(GW-1,gy,gz,'people');
   }
+  // 2. Wall battlements
+  for(let gx=0;gx<GW;gx+=2){ add(gx,H_WALL,0,'stories'); add(gx,H_WALL,GD-1,'stories'); }
+  for(let gz=1;gz<GD-1;gz+=2){ add(0,H_WALL,gz,'people'); add(GW-1,H_WALL,gz,'people'); }
 
-  // ── 2. Wall battlements (row H_WALL, alternating) ─
-  for (let gx=0; gx<GW; gx+=2) {
-    add(gx, H_WALL, 0,    'stories');  // front
-    add(gx, H_WALL, GD-1, 'stories'); // back
+  // 3. Corner towers (rows H_WALL+1 through H_WALL+TOWER_EXTRA)
+  const TCORNERS=[[0,0],[GW-2,0],[0,GD-2],[GW-2,GD-2]];
+  for(let gy=H_WALL+1;gy<=H_WALL+TOWER_EXTRA;gy++){
+    for(const[cx,cz]of TCORNERS)
+      for(let dx=0;dx<2;dx++) for(let dz=0;dz<2;dz++) add(cx+dx,gy,cz+dz,'projects');
   }
-  for (let gz=1; gz<GD-1; gz+=2) {
-    add(0,    H_WALL, gz, 'people');   // left
-    add(GW-1, H_WALL, gz, 'people');  // right
-  }
+  // 4. Tower battlement caps
+  const tcgy=H_WALL+TOWER_EXTRA+1;
+  for(const[cx,cz]of TCORNERS){ add(cx,tcgy,cz,'projects'); add(cx+1,tcgy,cz+1,'projects'); }
 
-  // ── 3. Corner towers (rows H_WALL+1 to H_WALL+TOWER_EXTRA) ──
-  const TCORNERS = [[0,0],[GW-2,0],[0,GD-2],[GW-2,GD-2]];
-  for (let gy=H_WALL+1; gy<=H_WALL+TOWER_EXTRA; gy++) {
-    for (const [cx,cz] of TCORNERS) {
-      for (let dx=0;dx<2;dx++) for (let dz=0;dz<2;dz++) add(cx+dx,gy,cz+dz,'projects');
-    }
-  }
-
-  // ── 4. Tower caps (alternating per tower) ─────────
-  const tcgy = H_WALL + TOWER_EXTRA + 1;
-  for (const [cx,cz] of TCORNERS) {
-    add(cx,   tcgy, cz,   'projects');
-    add(cx+1, tcgy, cz+1, 'projects');
-  }
-
-  // ── 5. Keep shell (rows 0 to H_WALL+4, hollow 3×3) ─
-  const H_KEEP = H_WALL + 5; // shell rows: 0 to H_KEEP-1
-  for (let gy=0; gy<H_KEEP; gy++) {
-    for (let dx=0; dx<KW; dx++) for (let dz=0; dz<KD; dz++) {
-      if (dx===0||dx===KW-1||dz===0||dz===KD-1) add(KX+dx,gy,KZ+dz,'preferences');
+  // 5. Keep shell (hollow 3×3, rows 0 to H_KEEP-1)
+  const H_KEEP=H_WALL+5; // =7
+  for(let gy=0;gy<H_KEEP;gy++){
+    for(let dx=0;dx<KW;dx++) for(let dz=0;dz<KD;dz++){
+      if(dx===0||dx===KW-1||dz===0||dz===KD-1) add(KX+dx,gy,KZ+dz,'preferences');
     }
   }
+  // 6. Keep cap (solid, 2 rows)
+  for(let gy=H_KEEP;gy<H_KEEP+2;gy++)
+    for(let dx=0;dx<KW;dx++) for(let dz=0;dz<KD;dz++) add(KX+dx,gy,KZ+dz,'preferences');
 
-  // ── 6. Keep cap (solid, 2 rows) ──────────────────
-  for (let gy=H_KEEP; gy<H_KEEP+2; gy++) {
-    for (let dx=0; dx<KW; dx++) for (let dz=0; dz<KD; dz++) add(KX+dx,gy,KZ+dz,'preferences');
-  }
+  // 7. Spire (2×2, absorbs remainder)
+  const base=slots.length;
+  const spireStart=H_KEEP+2;
+  const spireRows=Math.floor(Math.max(0,N-base)/4);
+  for(let gy=spireStart;gy<spireStart+spireRows;gy++)
+    for(let dx=0;dx<2;dx++) for(let dz=0;dz<2;dz++) add(SPIRE_GX+dx,gy,SPIRE_GZ+dz,'preferences');
 
-  // ── 7. Spire (2×2, absorbs remainder) ───────────
-  const baseCount = slots.length;
-  const spireStart = H_KEEP+2;
-  const spireRows = Math.floor(Math.max(0, N-baseCount) / 4);
-  for (let gy=spireStart; gy<spireStart+spireRows; gy++) {
-    for (let dx=0; dx<2; dx++) for (let dz=0; dz<2; dz++) add(SPIRE_GX+dx,gy,SPIRE_GZ+dz,'preferences');
-  }
-
-  return slots.slice(0, N);
+  return slots.slice(0,N);
 }
 
-/* ─── memory data ────────────────────────────────── */
+/* ─── memories ────────────────────────────────────── */
 const LABELS = {
   people:      ['A close friend','A mentor','A collaborator','A co-founder','Family','A teammate','An advisor','A teacher','An old friend','A rival turned ally'],
   projects:    ['A product shipped','An open source tool','A side project','A design system','A startup','A prototype','A feature launched','A thesis'],
-  stories:     ['A memory made','A lesson learned','A risk taken','A trip abroad','A book that changed me','A decision that mattered','A breakthrough','A failure survived','A door opened'],
+  stories:     ['A memory made','A lesson learned','A risk taken','A trip abroad','A book that changed me','A decision that mattered','A breakthrough','A failure survived'],
   preferences: ['A taste developed','A philosophy held','A habit built','A design principle','A strong opinion','A ritual kept','An aesthetic found'],
 };
 const MCOUNTS = { people:60, projects:45, stories:70, preferences:55 };
-const memories = [];
-for (const [cat,n] of Object.entries(MCOUNTS)) {
-  const lbl = LABELS[cat];
-  for (let i=0;i<n;i++) memories.push({ cat, label:lbl[i%lbl.length] });
+const memories=[];
+for(const[cat,n]of Object.entries(MCOUNTS)){
+  const lbl=LABELS[cat];
+  for(let i=0;i<n;i++) memories.push({cat, label:lbl[i%lbl.length]});
 }
-const rShuf = mkRand(314);
-memories.sort(()=>rShuf()-.5);
+mkRand(314)(); // warm up
+memories.sort(()=>mkRand(314)()-.5);
 
-const N = memories.length;
-const slots = buildCastleForN(N);
+const N=memories.length;
+const slots=buildCastleForN(N);
 
-/* ─── stage label ────────────────────────────────── */
-const STAGE = N<80?'foundations':N<180?'curtain walls':N<220?'battlements':N<300?'towers & keep':N<500?'fortress':N<800?'stronghold':'great fortress';
-document.getElementById('stage').textContent = STAGE;
-document.getElementById('count').textContent = N + ' memories';
+document.getElementById('stage').textContent =
+  N<80?'foundations':N<180?'curtain walls':N<220?'battlements':N<300?'towers & keep':N<500?'fortress':N<800?'stronghold':'great citadel';
+document.getElementById('count').textContent = N+' memories';
 
 /* ─── section colors ─────────────────────────────── */
+// Warm, saturated stone tones — look great under torchlight
 const SEC_COL = {
-  people:      new THREE.Color(0x5c8cb5),
-  stories:     new THREE.Color(0xb56e3a),
-  projects:    new THREE.Color(0x4a7a38),
-  preferences: new THREE.Color(0x7a50a8),
+  people:      new THREE.Color(0x4878a8),  // blue-grey limestone
+  stories:     new THREE.Color(0xc87828),  // warm amber sandstone
+  projects:    new THREE.Color(0x4a7e38),  // mossy green
+  preferences: new THREE.Color(0x8050b0),  // rich purple
 };
 
-/* ─── torch positions (set now that castle is defined) ─ */
-const gateWorldZ = (GATE_GX - GW/2 + 0.5)*BW; // x center of gate
-const frontWallZ = (0 - GD/2 + 0.5)*BD;        // z of front wall
-torchL.position.set(-1.0*BW, 1.2, frontWallZ - 0.4);
-torchR.position.set( 1.0*BW, 1.2, frontWallZ - 0.4);
-
-/* ─── window glow planes on keep ─────────────────── */
-const winMat = new THREE.MeshBasicMaterial({ color:0xff9944, transparent:true, opacity:0.7, side:THREE.DoubleSide });
-const keepCenterX = (KX+1 - GW/2 + 0.5)*BW;
-const keepCenterZ = (KZ+1 - GD/2 + 0.5)*BD;
-for (let gy=1; gy<=5; gy+=2) {
-  const w = new THREE.Mesh(new THREE.PlaneGeometry(0.18,0.26), winMat.clone());
-  w.position.set(keepCenterX, gy*BH + BH*0.3, keepCenterZ - KD*BD*0.5 + 0.04);
-  scene.add(w);
-  const w2 = w.clone();
-  w2.position.set(keepCenterX + KW*BW*0.5 - 0.04, gy*BH + BH*0.3, keepCenterZ);
-  w2.rotation.y = Math.PI/2; scene.add(w2);
-}
-
 /* ─── instanced mesh ─────────────────────────────── */
-const bGeo = new THREE.BoxGeometry(BW*0.90, BH*0.86, BD*0.90);
-// emissive ensures bricks are ALWAYS visible regardless of light angle
+const bGeo = new THREE.BoxGeometry(BW*0.88, BH*0.84, BD*0.88);
+// Emissive = dark warm tint (safety net for full shadow), NOT white
 const bMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff, roughness: 0.82, metalness: 0.04,
-  emissive: new THREE.Color(0xffffff), emissiveIntensity: 0.35,
+  color: 0xffffff, roughness: 0.88, metalness: 0.03,
+  emissive: new THREE.Color(0x1a0904), emissiveIntensity: 0.6,
 });
 const iMesh = new THREE.InstancedMesh(bGeo, bMat, N);
 iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -372,285 +322,372 @@ const dummy = new THREE.Object3D();
 const meta = [];
 const rCol = mkRand(91);
 
-slots.forEach(({pos,section},i) => {
+slots.forEach(({pos,section},i)=>{
   const mem = memories[i];
   const base = SEC_COL[section].clone();
-  const v = (rCol()-.5)*0.10;
-  base.r = THREE.MathUtils.clamp(base.r+v, 0.03, 0.96);
-  base.g = THREE.MathUtils.clamp(base.g+v, 0.03, 0.96);
-  base.b = THREE.MathUtils.clamp(base.b+v, 0.03, 0.96);
+  const v = (rCol()-.5)*0.12;
+  base.r = THREE.MathUtils.clamp(base.r+v, 0.02, 0.98);
+  base.g = THREE.MathUtils.clamp(base.g+v, 0.02, 0.98);
+  base.b = THREE.MathUtils.clamp(base.b+v, 0.02, 0.98);
 
   dummy.position.copy(pos); dummy.scale.set(1,1,1); dummy.updateMatrix();
   iMesh.setMatrixAt(i, dummy.matrix);
   iMesh.setColorAt(i, base);
-
-  meta.push({ label:mem.label, section, basePos:pos.clone(), baseColor:base.clone() });
+  meta.push({label:mem.label, section, basePos:pos.clone(), baseColor:base.clone()});
 });
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-/* ─── entrance animation — bricks fade in from black ─
-   Bricks stay at their CORRECT positions the whole time;
-   only the color fades from black → full. Lower bricks
-   appear first, upper bricks last. No position bugs possible. */
-const maxY = Math.max(...meta.map(d=>d.basePos.y));
-// Start all bricks black
-meta.forEach((d,i) => iMesh.setColorAt(i, new THREE.Color(0x000000)));
+/* ─── torch positions ─────────────────────────────── */
+const frontWallZ = (0 - GD/2 + 0.5)*BD;
+torchL.position.set(-0.6, 1.0, frontWallZ - 0.45);
+torchR.position.set( 0.6, 1.0, frontWallZ - 0.45);
+keepGlow.position.set(0, 1.6, 0.3);
+
+/* ─── cone caps on towers + keep + spire ─────────── */
+const coneMat = new THREE.MeshStandardMaterial({ color:0x6a2a10, roughness:0.75, metalness:0.08 });
+const poleMat = new THREE.MeshStandardMaterial({ color:0x8b6420, roughness:0.7 });
+
+function addTower(cx, cz, tipRow, flagColor){
+  // Center of 2×2 tower block
+  const tx = (cx + 1 - GW/2)*BW;
+  const tz = (cz + 1 - GD/2)*BD;
+  const topBrickY = tipRow*BH + BH*0.5; // center of top-row brick
+  const coneBase = topBrickY + BH*0.5;  // bottom of cone = top of brick
+
+  const coneH = 1.0;
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.55, coneH, 8), coneMat.clone());
+  cone.position.set(tx, coneBase + coneH/2, tz);
+  scene.add(cone);
+
+  // Flag pole
+  const poleH = 0.6;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,poleH,5), poleMat);
+  pole.position.set(tx, coneBase + coneH + poleH/2, tz);
+  scene.add(pole);
+
+  // Flag
+  const flag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.16, 0.02),
+    new THREE.MeshBasicMaterial({ color:flagColor, side:THREE.DoubleSide })
+  );
+  flag.position.set(tx + 0.16, coneBase + coneH + poleH*0.75, tz);
+  scene.add(flag);
+}
+
+function addKeepCone(kx, kz, kw, kd, tipRow, coneH, flagColor){
+  const tx = (kx + kw/2 - GW/2 + 0.5)*BW;
+  const tz = (kz + kd/2 - GD/2 + 0.5)*BD;
+  const coneBase = tipRow*BH + BH*0.5 + BH*0.5;
+
+  const cm = coneMat.clone(); cm.color.set(0x7a3218);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.68, coneH, 8), cm);
+  cone.position.set(tx, coneBase + coneH/2, tz);
+  scene.add(cone);
+
+  const poleH = 0.7;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,poleH,5), poleMat);
+  pole.position.set(tx, coneBase + coneH + poleH/2, tz);
+  scene.add(pole);
+
+  const flag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.32, 0.18, 0.02),
+    new THREE.MeshBasicMaterial({ color:flagColor, side:THREE.DoubleSide })
+  );
+  flag.position.set(tx + 0.18, coneBase + coneH + poleH*0.75, tz);
+  scene.add(flag);
+}
+
+// Tower caps at row tcgy = H_WALL + TOWER_EXTRA + 1 = 7
+const tcgy = H_WALL + TOWER_EXTRA + 1;
+const TCORNERS = [[0,0],[GW-2,0],[0,GD-2],[GW-2,GD-2]];
+TCORNERS.forEach(([cx,cz]) => addTower(cx, cz, tcgy, 0x448840));
+
+// Keep cap top row = H_KEEP + 1 = 8
+const keepCapRow = (H_WALL+5) + 1;
+addKeepCone(KX, KZ, KW, KD, keepCapRow, 1.1, 0x8844cc);
+
+// Spire cone (top of spire rows if any)
+const base0 = buildCastleForN(N).length; // actual base count
+const nSlots = slots.length;
+const spireStart = (H_WALL+5)+2;
+const spireRows = Math.floor(Math.max(0, N - (nSlots - Math.max(0,N-buildCastleForN(N).length+Math.floor(Math.max(0,N-(()=>{
+  // recalculate base without spire
+  let cnt=0;
+  for(let gy=0;gy<H_WALL;gy++){
+    for(let gx=0;gx<GW;gx++) if(!(gx>=GATE_GX&&gx<GATE_GX+GATE_W&&gy<=1)) cnt++;
+    cnt+=GW; cnt+=2*(GD-2); cnt+=2*(GD-2);
+  }
+  for(let gx=0;gx<GW;gx+=2) cnt+=2;
+  for(let gz=1;gz<GD-1;gz+=2) cnt+=2;
+  const H_KEEP=H_WALL+5;
+  cnt+=4*4*TOWER_EXTRA + 4*2;
+  cnt+=H_KEEP*2*(KW+KD-2);
+  cnt+=KW*KD*2;
+  return cnt;
+})()))*4))/ 4);
+
+// Simpler: just count from the actual slots array
+const actualBaseCount = (() => {
+  let cnt=0;
+  for(let gy=0;gy<H_WALL;gy++){
+    for(let gx=0;gx<GW;gx++) if(!(gx>=GATE_GX&&gx<GATE_GX+GATE_W&&gy<=1)) cnt++;
+    cnt+=GW; cnt+=2*(GD-2); cnt+=2*(GD-2);
+  }
+  for(let gx=0;gx<GW;gx+=2) cnt+=2; for(let gz=1;gz<GD-1;gz+=2) cnt+=2;
+  cnt+=TCORNERS.length*4*TOWER_EXTRA + TCORNERS.length*2;
+  const H_KEEP=H_WALL+5;
+  cnt+=H_KEEP*2*(KW+KD-2); cnt+=KW*KD*2;
+  return cnt;
+})();
+const spireRowCount = Math.floor(Math.max(0, N - actualBaseCount) / 4);
+if(spireRowCount > 0){
+  const spireTopRow = spireStart + spireRowCount - 1;
+  const spireX = (SPIRE_GX + 1 - GW/2)*BW;
+  const spireZ = (SPIRE_GZ + 1 - GD/2)*BD;
+  const spConeH = 0.9 + spireRowCount*0.06;
+  const spConeBase = spireTopRow*BH + BH;
+  const spCone = new THREE.Mesh(new THREE.ConeGeometry(0.42, spConeH, 7), (() => { const m=coneMat.clone(); m.color.set(0x9a3a20); return m; })());
+  spCone.position.set(spireX, spConeBase + spConeH/2, spireZ);
+  scene.add(spCone);
+
+  const spPoleH = 0.55;
+  const spPole = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,spPoleH,5), poleMat);
+  spPole.position.set(spireX, spConeBase + spConeH + spPoleH/2, spireZ);
+  scene.add(spPole);
+
+  const spFlag = new THREE.Mesh(new THREE.BoxGeometry(0.24,0.14,0.02), new THREE.MeshBasicMaterial({color:0x9944cc, side:THREE.DoubleSide}));
+  spFlag.position.set(spireX+0.14, spConeBase+spConeH+spPoleH*0.75, spireZ);
+  scene.add(spFlag);
+}
+
+/* ─── window glows on keep ────────────────────────── */
+const winMat = new THREE.MeshBasicMaterial({ color:0xff9944, transparent:true, opacity:0.75, side:THREE.DoubleSide });
+const kCX = (KX+1-GW/2+0.5)*BW, kCZ = (KZ+1-GD/2+0.5)*BD;
+for(let gy=1;gy<H_WALL+5;gy+=2){
+  const w = new THREE.Mesh(new THREE.PlaneGeometry(0.16,0.22), winMat.clone());
+  w.position.set(kCX, gy*BH+BH*0.3, kCZ - KD*BD*0.5 + 0.04);
+  scene.add(w);
+  const w2 = w.clone();
+  w2.position.set(kCX+KW*BW*0.5-0.04, gy*BH+BH*0.3, kCZ);
+  w2.rotation.y=Math.PI/2; scene.add(w2);
+}
+
+/* ─── entrance animation — fade in ────────────────── */
+// All bricks start black; each fades to full color staggered by height.
+meta.forEach((_,i) => iMesh.setColorAt(i, new THREE.Color(0)));
 iMesh.instanceColor.needsUpdate = true;
 
-const ENTER_STAGGER = 1.4;  // total stagger window in seconds
-const ENTER_FADE    = 0.45; // fade duration per brick
-
+const maxY = Math.max(...meta.map(d=>d.basePos.y));
+const ENTER_STAGGER = 1.6, ENTER_FADE = 0.4;
 const enterItems = meta.map((d,i) => ({
-  idx: i,
-  delay: maxY > 0 ? (d.basePos.y / maxY) * ENTER_STAGGER : 0,
-  elapsed: 0,
-  done: false,
+  idx:i,
+  delay: maxY>0 ? (d.basePos.y/maxY)*ENTER_STAGGER : 0,
+  elapsed:0, done:false,
 }));
-
 let enterDone = false;
 
-/* ─── daily 10% animation (after entrance) ──────── */
+/* ─── daily 10% glow ─────────────────────────────── */
 const animCount = Math.max(1, Math.ceil(N*0.10));
-const scored = meta.map((d,i)=>({ i, score:d.basePos.y*100 + hash32(i*7+dateSeed)/0xffffffff }))
-  .sort((a,b)=>b.score-a.score).slice(0, animCount);
+const scored = meta.map((d,i)=>({i, score:d.basePos.y*100+hash32(i*7+dateSeed)/0xffffffff}))
+  .sort((a,b)=>b.score-a.score).slice(0,animCount);
 const dailyItems = scored.map(({i},ai)=>({
-  idx:i, delay:0.3+ai*0.22, elapsed:0, phase:'wait',
-  triggered: false,
+  idx:i, delay:ENTER_STAGGER+ENTER_FADE+0.4+ai*0.18,
+  elapsed:0, phase:'glow',
 }));
 
-/* ─── stars ─────────────────────────────────────── */
-const SCOUNT = 2000;
-const sPos = new Float32Array(SCOUNT*3);
-const rStar = mkRand(333);
-for (let i=0; i<SCOUNT; i++) {
-  const theta = rStar()*Math.PI*2, phi = Math.acos(rStar()*2-1);
-  const r = 140+rStar()*10;
-  sPos[i*3]   = r*Math.sin(phi)*Math.cos(theta);
-  sPos[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
-  sPos[i*3+2] = r*Math.cos(phi);
+/* ─── stars ──────────────────────────────────────── */
+const SCOUNT=2000, sPos=new Float32Array(SCOUNT*3);
+const rStar=mkRand(333);
+for(let i=0;i<SCOUNT;i++){
+  const theta=rStar()*Math.PI*2, phi=Math.acos(rStar()*2-1), r=140+rStar()*10;
+  sPos[i*3]=r*Math.sin(phi)*Math.cos(theta);
+  sPos[i*3+1]=r*Math.sin(phi)*Math.sin(theta);
+  sPos[i*3+2]=r*Math.cos(phi);
 }
-const starGeo = new THREE.BufferGeometry();
-starGeo.setAttribute('position', new THREE.BufferAttribute(sPos,3));
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0xffffff, size:0.3, transparent:true, opacity:0.8, sizeAttenuation:true }));
+const starGeo=new THREE.BufferGeometry();
+starGeo.setAttribute('position',new THREE.BufferAttribute(sPos,3));
+const stars=new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff, size:0.28, transparent:true, opacity:0.85, sizeAttenuation:true}));
 scene.add(stars);
 
-/* ─── moon ──────────────────────────────────────── */
-const moonMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(2.5,12,8),
-  new THREE.MeshBasicMaterial({ color:0xdde8f4 })
+/* ─── moon sphere ─────────────────────────────────── */
+const moonMesh=new THREE.Mesh(
+  new THREE.SphereGeometry(2.4,12,8),
+  new THREE.MeshBasicMaterial({color:0xdde8f4})
 );
-moonMesh.position.set(35, 55, -90);
+moonMesh.position.set(-40, 55, -90);
 scene.add(moonMesh);
+const moonDirLight=new THREE.DirectionalLight(0x7788bb,0);
+moonDirLight.position.set(-40,55,-90);
+scene.add(moonDirLight);
 
-const moonLight = new THREE.DirectionalLight(0x8899cc, 0);
-moonLight.position.set(35, 55, -90);
-scene.add(moonLight);
-
-/* ─── clouds ────────────────────────────────────── */
-const cloudTex = (() => {
-  const c = document.createElement('canvas'); c.width=512; c.height=256;
-  const ctx = c.getContext('2d');
-  const puffs = [[120,130,80],[220,100,60],[310,140,55],[420,110,65],[80,150,45],[370,120,40],[480,150,35]];
-  puffs.forEach(([x,y,r]) => {
-    const g = ctx.createRadialGradient(x,y,0,x,y,r);
-    g.addColorStop(0,'rgba(255,255,255,0.95)');
-    g.addColorStop(0.6,'rgba(255,255,255,0.5)');
-    g.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-  });
+/* ─── clouds ──────────────────────────────────────── */
+const cloudTex=(()=>{
+  const c=document.createElement('canvas'); c.width=512; c.height=256;
+  const ctx=c.getContext('2d');
+  [[120,130,80],[220,100,60],[310,140,55],[420,110,65],[80,150,45],[370,120,40],[480,150,35]]
+    .forEach(([x,y,r])=>{
+      const g=ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0,'rgba(255,255,255,0.95)'); g.addColorStop(.6,'rgba(255,255,255,0.5)'); g.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    });
   return new THREE.CanvasTexture(c);
 })();
-const cloudPositions = [[-18,22,-35],[12,25,-40],[28,20,-28],[-8,24,-45],[20,18,-20]];
-const clouds = cloudPositions.map(([x,y,z]) => {
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:cloudTex, transparent:true, opacity:0.82, depthWrite:false }));
-  sp.scale.set(18, 7, 1);
-  sp.position.set(x, y, z);
-  sp.visible = false; // hidden in dark mode
-  scene.add(sp);
-  return sp;
+const cloudPositions=[[-18,22,-35],[12,25,-40],[28,20,-28],[-8,24,-45],[20,18,-20]];
+const clouds=cloudPositions.map(([x,y,z])=>{
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:cloudTex,transparent:true,opacity:0.82,depthWrite:false}));
+  sp.scale.set(18,7,1); sp.position.set(x,y,z); sp.visible=false; scene.add(sp); return sp;
 });
 
-/* ─── torch flame sprites ───────────────────────── */
-const flameTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(32,38,0,32,38,30);
-  g.addColorStop(0,'rgba(255,200,50,0.95)'); g.addColorStop(0.3,'rgba(255,100,20,0.7)'); g.addColorStop(1,'rgba(255,80,0,0)');
+/* ─── torch flames ────────────────────────────────── */
+const flameTex=(()=>{
+  const c=document.createElement('canvas'); c.width=c.height=64;
+  const ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(32,38,0,32,38,30);
+  g.addColorStop(0,'rgba(255,210,60,0.95)'); g.addColorStop(0.35,'rgba(255,100,20,0.7)'); g.addColorStop(1,'rgba(255,60,0,0)');
   ctx.fillStyle=g; ctx.fillRect(0,0,64,64);
   return new THREE.CanvasTexture(c);
 })();
-const flameMat = new THREE.SpriteMaterial({ map:flameTex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
-const flameL = new THREE.Sprite(flameMat.clone()); flameL.scale.set(0.5,0.65,1);
-flameL.position.copy(torchL.position).y += 0.18;
-const flameR = new THREE.Sprite(flameMat.clone()); flameR.scale.set(0.5,0.65,1);
-flameR.position.copy(torchR.position).y += 0.18;
-scene.add(flameL, flameR);
+const flameMat=new THREE.SpriteMaterial({map:flameTex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false});
+const flameL=new THREE.Sprite(flameMat.clone()); flameL.scale.set(0.5,0.65,1); flameL.position.copy(torchL.position); flameL.position.y+=0.2;
+const flameR=new THREE.Sprite(flameMat.clone()); flameR.scale.set(0.5,0.65,1); flameR.position.copy(torchR.position); flameR.position.y+=0.2;
+scene.add(flameL,flameR);
 
-/* ─── ember particles ───────────────────────────── */
-const PCOUNT = 220;
-const pBuf = new Float32Array(PCOUNT*3);
-for (let i=0; i<PCOUNT; i++) {
-  pBuf[i*3]   = (Math.random()-.5)*18;
-  pBuf[i*3+1] = Math.random()*10;
-  pBuf[i*3+2] = (Math.random()-.5)*12;
-}
-const pGeo = new THREE.BufferGeometry();
-pGeo.setAttribute('position', new THREE.BufferAttribute(pBuf,3));
-const embers = new THREE.Points(pGeo, new THREE.PointsMaterial({ color:0xff8844, size:0.06, transparent:true, opacity:0.4 }));
+/* ─── embers ──────────────────────────────────────── */
+const PCOUNT=180, pBuf=new Float32Array(PCOUNT*3);
+for(let i=0;i<PCOUNT;i++){ pBuf[i*3]=(Math.random()-.5)*16; pBuf[i*3+1]=Math.random()*9; pBuf[i*3+2]=(Math.random()-.5)*10; }
+const pGeo=new THREE.BufferGeometry();
+pGeo.setAttribute('position',new THREE.BufferAttribute(pBuf,3));
+const embers=new THREE.Points(pGeo, new THREE.PointsMaterial({color:0xff8844, size:0.06, transparent:true, opacity:0.35}));
 scene.add(embers);
 
-/* ─── dark / light mode ─────────────────────────── */
-let isDark = true;
-let modeT = 0;   // 0=dark, 1=light
-let modeTgt = 0;
-const btnEl = document.getElementById('toggle');
-btnEl.addEventListener('click', () => {
-  isDark = !isDark;
-  modeTgt = isDark ? 0 : 1;
-  btnEl.textContent = isDark ? '🌙' : '☀️';
+/* ─── mode toggle ─────────────────────────────────── */
+let isDark=true, modeT=0, modeTgt=0;
+const btnEl=document.getElementById('toggle');
+btnEl.addEventListener('click',()=>{
+  isDark=!isDark; modeTgt=isDark?0:1;
+  btnEl.textContent=isDark?'🌙':'☀️';
 });
+function lerpColor(out,a,b,t){ out.lerpColors(a,b,t); }
 
-function lerpColor(out, a, b, t) { out.lerpColors(a, b, t); }
-
-/* ─── hover ─────────────────────────────────────── */
-const ray = new THREE.Raycaster();
-const mouse = new THREE.Vector2(-999,-999);
-const labelEl = document.getElementById('label');
-let curHover = -1, savedHoverColor = null;
-let colorDirty = false;
-
-addEventListener('mousemove', e => {
-  mouse.x = (e.clientX/innerWidth)*2-1;
-  mouse.y = -(e.clientY/innerHeight)*2+1;
+/* ─── hover ───────────────────────────────────────── */
+const ray=new THREE.Raycaster();
+const mouse=new THREE.Vector2(-999,-999);
+const labelEl=document.getElementById('label');
+let curHover=-1, savedHoverColor=null, colorDirty=false;
+addEventListener('mousemove',e=>{
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
 });
-addEventListener('resize', () => {
-  cam.aspect = innerWidth/innerHeight;
+addEventListener('resize',()=>{
+  cam.aspect=innerWidth/innerHeight;
   cam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
 
-/* ─── animation helper ───────────────────────────── */
-function setIMatrix(i, pos, sx=1, sy=1, sz=1) {
-  dummy.position.set(pos.x, pos.y, pos.z);
+/* ─── matrix helper ───────────────────────────────── */
+function setMat(i,pos,sx=1,sy=1,sz=1){
+  dummy.position.set(pos.x,pos.y,pos.z);
   dummy.scale.set(sx,sy,sz); dummy.updateMatrix();
-  iMesh.setMatrixAt(i, dummy.matrix);
+  iMesh.setMatrixAt(i,dummy.matrix);
 }
 
-/* ─── render loop ────────────────────────────────── */
-const clock = new THREE.Clock();
+/* ─── render loop ─────────────────────────────────── */
+const clock=new THREE.Clock();
 
-renderer.setAnimationLoop(() => {
-  const dt = clock.getDelta(), t = clock.getElapsedTime();
+renderer.setAnimationLoop(()=>{
+  const dt=clock.getDelta(), t=clock.getElapsedTime();
   ctrl.update();
 
-  /* ── mode transition ───────────────────────────── */
-  modeT = THREE.MathUtils.lerp(modeT, modeTgt, dt*1.2);
-  const m = modeT;
-
+  /* mode transition */
+  modeT=THREE.MathUtils.lerp(modeT,modeTgt,dt*1.2);
+  const m=modeT;
   lerpColor(skyUni.top.value,   SKY_DARK.top,   SKY_LIGHT.top,   m);
   lerpColor(skyUni.horiz.value, SKY_DARK.horiz, SKY_LIGHT.horiz, m);
   lerpColor(skyUni.bot.value,   SKY_DARK.bot,   SKY_LIGHT.bot,   m);
 
-  // Lights
-  ambient.color.lerpColors(new THREE.Color(0x1a2235), new THREE.Color(0x3a3020), m);
-  ambient.intensity   = THREE.MathUtils.lerp(5.5, 7.0, m);
-  hemi.intensity      = THREE.MathUtils.lerp(1.2, 2.5, m);
-  mainLight.intensity = THREE.MathUtils.lerp(3.5, 6.0, m);
-  mainLight.color.lerpColors(new THREE.Color(0x8090c8), new THREE.Color(0xfff8e8), m);
-  mainLight.position.lerpVectors(new THREE.Vector3(-14,30,-20), new THREE.Vector3(18,34,14), m);
-  fillLight.intensity = THREE.MathUtils.lerp(1.2, 2.0, m);
-  fillLight.color.lerpColors(new THREE.Color(0xc0a070), new THREE.Color(0xffeedd), m);
-  rimLight.intensity  = THREE.MathUtils.lerp(0.8, 0.3, m);
+  ambient.color.lerpColors(new THREE.Color(0x080c18), new THREE.Color(0x302818), m);
+  ambient.intensity   = THREE.MathUtils.lerp(3.0, 6.0, m);
+  hemi.intensity      = THREE.MathUtils.lerp(1.5, 3.0, m);
+  moonKey.intensity   = THREE.MathUtils.lerp(2.8, 5.5, m);
+  moonKey.color.lerpColors(new THREE.Color(0x9aaccc), new THREE.Color(0xfff8e8), m);
+  moonKey.position.lerpVectors(new THREE.Vector3(-18,32,-22), new THREE.Vector3(18,36,14), m);
+  warmFill.intensity  = THREE.MathUtils.lerp(0.9, 1.8, m);
+  rimLight.intensity  = THREE.MathUtils.lerp(0.5, 0.2, m);
 
-  // Dark-only elements
-  const darkAlpha = Math.max(0, 1-m*2.5);
-  stars.material.opacity = darkAlpha * 0.8;
-  moonMesh.material.opacity = darkAlpha; moonMesh.material.transparent = true;
-  moonLight.intensity = darkAlpha * 1.5;
-  torchL.intensity = torchR.intensity = THREE.MathUtils.lerp(4.0, 1.0, m) * (1.0 + Math.sin(t*8.3)*0.15 + Math.sin(t*13.7)*0.1);
-  keepGlow.intensity = THREE.MathUtils.lerp(2.5, 0.8, m) * (1.0 + Math.sin(t*3.1)*0.08);
-  flameL.material.opacity = flameR.material.opacity = THREE.MathUtils.lerp(0.9, 0.3, m);
+  const da=Math.max(0,1-m*2.5);
+  stars.material.opacity=da*0.85;
+  moonMesh.material.opacity=da; moonMesh.material.transparent=true;
+  moonDirLight.intensity=da*1.2;
+  torchL.intensity=torchR.intensity=THREE.MathUtils.lerp(5.0,1.2,m)*(1+Math.sin(t*8.3)*0.15+Math.sin(t*13.7)*0.08);
+  keepGlow.intensity=THREE.MathUtils.lerp(3.5,0.8,m)*(1+Math.sin(t*3.1)*0.08);
+  flameL.material.opacity=flameR.material.opacity=THREE.MathUtils.lerp(0.9,0.25,m);
 
-  // Light-only elements
-  const lightAlpha = Math.max(0, m*2.5-0.5);
-  clouds.forEach((cl,ci) => {
-    cl.visible = lightAlpha > 0.01;
-    cl.material.opacity = lightAlpha * 0.82;
-    cl.position.y = cloudPositions[ci][1] + Math.sin(t*0.18+ci)*0.8;
-    cl.position.x = cloudPositions[ci][0] + Math.sin(t*0.08+ci*1.4)*2.5;
+  const la=Math.max(0,m*2.5-0.5);
+  clouds.forEach((cl,ci)=>{
+    cl.visible=la>0.01; cl.material.opacity=la*0.82;
+    cl.position.y=cloudPositions[ci][1]+Math.sin(t*0.18+ci)*0.8;
+    cl.position.x=cloudPositions[ci][0]+Math.sin(t*0.08+ci*1.4)*2.5;
   });
 
-  // Fog color
-  scene.fog.color.lerpColors(new THREE.Color(0x14090a), new THREE.Color(0x90c0e0), m);
+  scene.fog.color.lerpColors(new THREE.Color(0x10080c), new THREE.Color(0x90c0e0), m);
   renderer.setClearColor(scene.fog.color);
+  gndMat.color.lerpColors(new THREE.Color(0x140d08), new THREE.Color(0x384828), m);
 
-  // Ground tint in light mode
-  gndMat.color.lerpColors(new THREE.Color(0x180e08), new THREE.Color(0x3a5030), m);
+  /* flames */
+  const fs=0.48+Math.sin(t*11.2)*0.09+Math.sin(t*7.3)*0.05;
+  flameL.scale.set(fs,fs*1.3,1); flameR.scale.set(fs,fs*1.3,1);
 
-  /* ── flame sprite animation ─────────────────────── */
-  const fScale = 0.5 + Math.sin(t*11.2)*0.08 + Math.sin(t*7.3)*0.05;
-  flameL.scale.set(fScale, fScale*1.3, 1);
-  flameR.scale.set(fScale, fScale*1.3, 1);
-
-  /* ── embers ──────────────────────────────────────── */
-  for (let i=0; i<PCOUNT; i++) {
-    pBuf[i*3+1] += dt*(0.28 + Math.sin(t*0.3+i)*0.12);
-    if (pBuf[i*3+1] > 12) pBuf[i*3+1] = Math.random()*1.2;
+  /* embers */
+  for(let i=0;i<PCOUNT;i++){
+    pBuf[i*3+1]+=dt*(0.25+Math.sin(t*0.3+i)*0.12);
+    if(pBuf[i*3+1]>10) pBuf[i*3+1]=Math.random()*1.2;
   }
-  pGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.position.needsUpdate=true;
 
-  /* ── entrance animation — simple fade in ────────── */
-  // Bricks never move; only their color fades from black to full.
-  // This is bulletproof: no matrix manipulation, no position bugs.
-  if (!enterDone) {
-    let allDone = true;
-    for (const item of enterItems) {
-      if (item.done) continue;
-      allDone = false;
-      item.elapsed += dt;
-      if (item.elapsed < item.delay) continue; // still waiting
-      const p = Math.min((item.elapsed - item.delay) / ENTER_FADE, 1);
-      const d = meta[item.idx];
-      iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(p));
-      colorDirty = true;
-      if (p >= 1) { iMesh.setColorAt(item.idx, d.baseColor); item.done = true; }
+  /* entrance fade-in */
+  if(!enterDone){
+    let allDone=true;
+    for(const item of enterItems){
+      if(item.done) continue;
+      allDone=false;
+      item.elapsed+=dt;
+      if(item.elapsed<item.delay) continue;
+      const p=Math.min((item.elapsed-item.delay)/ENTER_FADE,1);
+      iMesh.setColorAt(item.idx, meta[item.idx].baseColor.clone().multiplyScalar(p));
+      colorDirty=true;
+      if(p>=1){ iMesh.setColorAt(item.idx, meta[item.idx].baseColor); item.done=true; }
     }
-    if (allDone) { enterDone = true; iMesh.instanceColor.needsUpdate = true; }
+    if(allDone){ enterDone=true; iMesh.instanceColor.needsUpdate=true; }
   }
 
-  /* ── daily 10% glow animation (runs after entrance) ─ */
-  if (enterDone) {
-    for (const item of dailyItems) {
-      if (item.phase==='done') continue;
-      item.elapsed += dt;
-      if (item.elapsed < item.delay) continue;
-      const p = Math.min((item.elapsed - item.delay) / 0.9, 1);
-      const glow = Math.sin(p * Math.PI) * 0.85;
-      const d = meta[item.idx];
-      iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
-      colorDirty = true;
-      if (p >= 1) { iMesh.setColorAt(item.idx, d.baseColor); item.phase = 'done'; }
+  /* daily glow */
+  if(enterDone){
+    for(const item of dailyItems){
+      if(item.phase==='done') continue;
+      item.elapsed+=dt;
+      if(item.elapsed<item.delay) continue;
+      const p=Math.min((item.elapsed-item.delay)/0.9,1);
+      const glow=Math.sin(p*Math.PI)*0.88;
+      iMesh.setColorAt(item.idx, meta[item.idx].baseColor.clone().lerp(new THREE.Color(0xffd070),glow));
+      colorDirty=true;
+      if(p>=1){ iMesh.setColorAt(item.idx, meta[item.idx].baseColor); item.phase='done'; }
     }
   }
 
-  if (colorDirty) { iMesh.instanceColor.needsUpdate=true; colorDirty=false; }
+  if(colorDirty){ iMesh.instanceColor.needsUpdate=true; colorDirty=false; }
 
-  /* ── hover ───────────────────────────────────────── */
-  ray.setFromCamera(mouse, cam);
-  const hits = ray.intersectObject(iMesh);
-  const hi = hits.length>0 ? hits[0].instanceId : -1;
-
-  if (hi !== curHover) {
-    if (curHover>=0 && savedHoverColor) {
-      iMesh.setColorAt(curHover, savedHoverColor);
-      iMesh.instanceColor.needsUpdate=true;
-    }
+  /* hover */
+  ray.setFromCamera(mouse,cam);
+  const hits=ray.intersectObject(iMesh);
+  const hi=hits.length>0?hits[0].instanceId:-1;
+  if(hi!==curHover){
+    if(curHover>=0&&savedHoverColor){ iMesh.setColorAt(curHover,savedHoverColor); iMesh.instanceColor.needsUpdate=true; }
     curHover=hi; savedHoverColor=null;
-    if (hi>=0 && meta[hi]) {
+    if(hi>=0&&meta[hi]){
       const c=new THREE.Color(); iMesh.getColorAt(hi,c);
       savedHoverColor=c.clone();
-      iMesh.setColorAt(hi, c.lerp(new THREE.Color(0xffffff),0.5));
+      iMesh.setColorAt(hi,c.lerp(new THREE.Color(0xffffff),0.45));
       iMesh.instanceColor.needsUpdate=true;
       labelEl.textContent=meta[hi].label; labelEl.style.opacity='1';
       document.body.style.cursor='pointer';
@@ -662,8 +699,6 @@ renderer.setAnimationLoop(() => {
 
   renderer.render(scene,cam);
 });
-
-
 </script>
 </body>
 </html>
