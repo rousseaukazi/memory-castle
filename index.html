@@ -6,442 +6,373 @@
 <title>Memory Castle</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { overflow: hidden; background: #0a0a14; }
+body { overflow: hidden; background: #060408; }
 canvas { display: block; }
-
 #label {
   position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
-  background: rgba(20, 14, 8, 0.7); backdrop-filter: blur(16px);
-  color: #f5e8c8; padding: 10px 28px; border-radius: 24px;
+  background: rgba(16, 10, 6, 0.75); backdrop-filter: blur(18px);
+  color: #f5e8c8; padding: 10px 30px; border-radius: 24px;
   font: 12px/1 'Georgia', serif; letter-spacing: 2.5px;
   text-transform: uppercase; pointer-events: none;
   opacity: 0; transition: opacity 0.2s;
-  border: 1px solid rgba(255,220,140,0.2);
+  border: 1px solid rgba(255, 210, 120, 0.2);
 }
 #title {
   position: fixed; top: 28px; left: 50%; transform: translateX(-50%);
-  color: rgba(245, 232, 200, 0.75); font: 11px/1 'Georgia', serif;
+  color: rgba(245, 232, 200, 0.6); font: 11px/1 'Georgia', serif;
   letter-spacing: 5px; text-transform: uppercase;
-  text-shadow: 0 0 20px rgba(200,160,60,0.4);
+  text-shadow: 0 0 24px rgba(220, 160, 60, 0.35);
 }
 #count {
-  position: fixed; bottom: 28px; right: 24px;
-  color: rgba(245,232,200,0.4); font: 10px/1 'Georgia', serif;
+  position: fixed; bottom: 26px; right: 24px;
+  color: rgba(245, 232, 200, 0.3); font: 10px/1 'Georgia', serif;
   letter-spacing: 2px; text-transform: uppercase;
 }
-#hint {
-  position: fixed; top: 28px; right: 24px;
-  color: rgba(245,232,200,0.35); font: 10px/1 'Georgia', serif;
-  letter-spacing: 1px;
+#stage {
+  position: fixed; top: 28px; left: 24px;
+  color: rgba(245, 232, 200, 0.3); font: 10px/1 'Georgia', serif;
+  letter-spacing: 1.5px; text-transform: uppercase;
 }
 </style>
 </head>
 <body>
 <div id="title">Memory Castle</div>
-<div id="hint">hover a brick</div>
+<div id="stage"></div>
 <div id="label"></div>
 <div id="count"></div>
 
 <script>
 window.onerror = (m, s, l) => {
-  document.body.style.background = '#1a0808';
-  document.getElementById('title').textContent = 'Error: ' + m + ' line ' + l;
+  const t = document.getElementById('title');
+  t.textContent = 'Error (line ' + l + '): ' + m;
+  t.style.color = '#ff6666';
 };
 </script>
 
 <script type="importmap">
-{
-  "imports": {
+{ "imports": {
     "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }
-}
+} }
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ─── Seeded random ────────────────────────────────────────
+/* ── helpers ─────────────────────────────────────────── */
 function mkRand(seed) {
   let s = (seed ^ 0xdeadbeef) >>> 0;
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 0x100000000; };
 }
 const today = new Date();
 const dateSeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
-
-function hashStr(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 0x01000193);
-  return (h >>> 0);
+function hash32(v) {
+  v = (v ^ 61) ^ (v >>> 16); v += v << 3; v ^= v >>> 4;
+  v = Math.imul(v, 0x27d4eb2d); return (v ^ (v >>> 15)) >>> 0;
 }
 
-// ─── Renderer ─────────────────────────────────────────────
+/* ── renderer ────────────────────────────────────────── */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
-// ─── Scene ────────────────────────────────────────────────
+/* ── scene + sky ─────────────────────────────────────── */
 const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(new THREE.Color(0x200e06), 0.008);
 
-// ─── Sky dome (gradient shader) ───────────────────────────
-const skyGeo = new THREE.SphereGeometry(180, 24, 12);
 const skyMat = new THREE.ShaderMaterial({
   uniforms: {
-    topColor:    { value: new THREE.Color(0x0d1a2e) },
-    horizColor:  { value: new THREE.Color(0x3a2010) },
-    bottomColor: { value: new THREE.Color(0x1a0e08) },
+    top:   { value: new THREE.Color(0x0b1420) },
+    horiz: { value: new THREE.Color(0x3d1f0a) },
+    bot:   { value: new THREE.Color(0x0a0608) },
   },
-  vertexShader: `varying float vY; void main() { vY = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  vertexShader: `varying float vY; void main(){ vY=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
   fragmentShader: `
-    uniform vec3 topColor, horizColor, bottomColor;
-    varying float vY;
-    void main() {
-      float t = clamp(vY, -1.0, 1.0);
-      vec3 col = t > 0.0 ? mix(horizColor, topColor, pow(t, 0.5)) : mix(horizColor, bottomColor, -t * 2.0);
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-  side: THREE.BackSide,
-  depthWrite: false,
+    uniform vec3 top,horiz,bot; varying float vY;
+    void main(){
+      float t=clamp(vY,-1.,1.);
+      vec3 c=t>0.?mix(horiz,top,pow(t,.55)):mix(horiz,bot,-t*2.);
+      gl_FragColor=vec4(c,1.);
+    }`,
+  side: THREE.BackSide, depthWrite: false,
 });
-scene.add(new THREE.Mesh(skyGeo, skyMat));
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(160, 20, 10), skyMat));
 
-// Horizon glow
-const fogColor = new THREE.Color(0x2a1808);
-scene.fog = new THREE.FogExp2(fogColor, 0.007);
-
-// ─── Camera ───────────────────────────────────────────────
-const cam = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
-cam.position.set(22, 18, 22);
-cam.lookAt(0, 3, 0);
+/* ── camera ──────────────────────────────────────────── */
+const cam = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 180);
+cam.position.set(20, 16, 20);
 
 const ctrl = new OrbitControls(cam, renderer.domElement);
 ctrl.enableDamping = true; ctrl.dampingFactor = 0.07;
-ctrl.target.set(0, 3, 0);
-ctrl.minPolarAngle = Math.PI / 8;
-ctrl.maxPolarAngle = Math.PI / 2.1;
-ctrl.minDistance = 10; ctrl.maxDistance = 50;
+ctrl.target.set(0, 2.5, 0);
+ctrl.minPolarAngle = Math.PI / 9; ctrl.maxPolarAngle = Math.PI / 2.15;
+ctrl.minDistance = 8; ctrl.maxDistance = 48;
 
-// ─── Lighting ─────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0x3a2815, 2.2));
+/* ── lights ──────────────────────────────────────────── */
+scene.add(new THREE.AmbientLight(0x30180a, 3.0));
+scene.add(new THREE.HemisphereLight(0x4a2808, 0x080406, 0.8));
 
-// Main sun (warm, raking light for dramatic brick shadows)
-const sun = new THREE.DirectionalLight(0xffcc88, 4.0);
-sun.position.set(14, 28, 8);
+const sun = new THREE.DirectionalLight(0xffa855, 3.5);
+sun.position.set(12, 26, 10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
-sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 80;
-sun.shadow.camera.left = sun.shadow.camera.bottom = -20;
-sun.shadow.camera.right = sun.shadow.camera.top = 20;
-sun.shadow.radius = 2;
-sun.shadow.bias = -0.001;
+sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 70;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -18;
+sun.shadow.camera.right = sun.shadow.camera.top = 18;
+sun.shadow.radius = 3; sun.shadow.bias = -0.001;
 scene.add(sun);
 
-// Cool blue fill from opposite side
-const fill = new THREE.DirectionalLight(0x4488cc, 0.8);
-fill.position.set(-10, 8, -14);
-scene.add(fill);
+scene.add(Object.assign(new THREE.DirectionalLight(0x2a3a5c, 0.6), { position: new THREE.Vector3(-10, 6, -14) }));
 
-// Warm bounce from ground
-const bounce = new THREE.PointLight(0x884422, 1.2, 30);
-bounce.position.set(0, -1, 0);
-scene.add(bounce);
+/* ── constants ───────────────────────────────────────── */
+const BW = 0.60, BH = 0.38, BD = 0.55;
+const GW = 14, GD = 10;
 
-// ─── Ground ───────────────────────────────────────────────
-// Stone courtyard under the castle
-const groundTex = (() => {
+/* ── torch lights at gate ────────────────────────────── */
+const gateZ = (0 - GD / 2 + 0.5) * BD;
+const torchL = new THREE.PointLight(0xff7722, 3.0, 5.5);
+const torchR = new THREE.PointLight(0xff7722, 3.0, 5.5);
+torchL.position.set(-1.2 * BW, 1.1, gateZ - 0.35);
+torchR.position.set( 1.2 * BW, 1.1, gateZ - 0.35);
+scene.add(torchL, torchR);
+
+const keepGlow = new THREE.PointLight(0xff9944, 1.8, 7);
+keepGlow.position.set(0, 1.5, 0);
+scene.add(keepGlow);
+
+/* ── ground ──────────────────────────────────────────── */
+const gndTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#1c1410'; ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = '#140c08'; ctx.fillRect(0, 0, 256, 256);
   const g = mkRand(7);
-  for (let i = 0; i < 1200; i++) {
-    const v = (g() - 0.5) * 20;
-    ctx.fillStyle = 'rgba(' + (80+v) + ',' + (60+v) + ',' + (40+v) + ',0.3)';
+  for (let i = 0; i < 800; i++) {
+    const v = (g() - 0.5) * 18;
+    ctx.fillStyle = `rgba(${50+v|0},${38+v|0},${28+v|0},0.4)`;
     ctx.fillRect(g() * 256, g() * 256, 2, 2);
   }
-  // Stone tile grid
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
-  for (let x = 0; x < 256; x += 32) ctx.strokeRect(x, 0, 32, 256);
-  for (let y = 0; y < 256; y += 32) ctx.strokeRect(0, y, 256, 32);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
+  for (let x = 0; x < 256; x += 28) ctx.strokeRect(x, 0, 28, 256);
+  for (let y = 0; y < 256; y += 28) ctx.strokeRect(0, y, 256, 28);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(8, 8);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 10);
   return t;
 })();
+{
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100),
+    new THREE.MeshStandardMaterial({ map: gndTex, roughness: 0.98, color: 0x1a0e08 })
+  );
+  m.rotation.x = -Math.PI / 2; m.position.y = -0.02; m.receiveShadow = true;
+  scene.add(m);
+}
+{
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 0.4, 7.4),
+    new THREE.MeshStandardMaterial({ color: 0x1a100a, roughness: 0.96 })
+  );
+  m.position.y = -0.2; m.receiveShadow = true; m.castShadow = true;
+  scene.add(m);
+}
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(80, 80),
-  new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.98, color: 0x281c14 })
-);
-ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02;
-ground.receiveShadow = true; scene.add(ground);
+/* ═══════════════════════════════════════════════════════
+   CASTLE BLUEPRINT — pure function of N
+   Every brick position is generated in strict architectural
+   priority. Take the first N → always a perfect castle.
+   ═══════════════════════════════════════════════════════ */
 
-// Stone plinth base
-const plinth = new THREE.Mesh(
-  new THREE.BoxGeometry(9.5, 0.5, 7.0),
-  new THREE.MeshStandardMaterial({ color: 0x1e160e, roughness: 0.95 })
-);
-plinth.position.y = -0.25; plinth.castShadow = true; plinth.receiveShadow = true;
-scene.add(plinth);
-
-// ─── Memory data ──────────────────────────────────────────
-const CATEGORIES = ['people', 'projects', 'stories', 'preferences'];
-const LABELS = {
-  people:      ['A close friend', 'A mentor', 'A collaborator', 'A co-founder', 'Family', 'A teammate', 'An advisor', 'A teacher', 'An old friend'],
-  projects:    ['A product shipped', 'An open source tool', 'A side project', 'A design system', 'A startup', 'A prototype', 'A feature launched', 'A thesis'],
-  stories:     ['A memory made', 'A lesson learned', 'A risk taken', 'A trip abroad', 'A book that changed me', 'A decision that mattered', 'A breakthrough'],
-  preferences: ['A taste developed', 'A philosophy held', 'A habit built', 'A design principle', 'A strong opinion', 'A ritual kept'],
-};
-
-// Build a flat list of memories (~230 total)
-const rMem = mkRand(99);
-const memories = [];
-const counts = { people: 60, projects: 45, stories: 70, preferences: 55 };
-CATEGORIES.forEach(cat => {
-  const lbl = LABELS[cat];
-  for (let i = 0; i < counts[cat]; i++) {
-    memories.push({ cat, label: lbl[i % lbl.length] });
-  }
-});
-// Shuffle memories
-memories.sort(() => rMem() - 0.5);
-
-// ─── Castle blueprint ─────────────────────────────────────
-// Brick slot dimensions (world units)
-const BW = 0.60; // width  (X)
-const BH = 0.38; // height (Y)
-const BD = 0.55; // depth  (Z)
-
-// Running bond: every other row shifts X by half a brick
 function slotPos(gx, gy, gz) {
   return new THREE.Vector3(
-    (gx - 6.5) * BW + (gy % 2) * (BW * 0.5),
+    (gx - GW / 2 + 0.5) * BW + (gy % 2) * BW * 0.5,
     gy * BH,
-    (gz - 5.0) * BD
+    (gz - GD / 2 + 0.5) * BD
   );
 }
 
-// Generate ALL possible brick positions in castle shape
-function castleBlueprint() {
-  const slots = []; // { pos, section }
+function buildCastleForN(n) {
+  const q = [];
+  const add = (gx, gy, gz, sec) => q.push({ pos: slotPos(gx, gy, gz), section: sec });
 
-  function add(gx, gy, gz, section) {
-    slots.push({ pos: slotPos(gx, gy, gz), section });
-  }
-
-  const W = 14, D = 10; // grid footprint
-
-  // ── Outer walls (perimeter, rows 0–4) ─────────────────
-  for (let gy = 0; gy < 5; gy++) {
-    // Front wall (gz=0) — gap for gate at gx 5-8, rows 0-1
-    for (let gx = 0; gx < W; gx++) {
+  // ── Phase 1: Curtain walls, row by row (all 4 sides together) ──
+  for (let gy = 0; gy < 6; gy++) {
+    // Front wall — gate opening at gx 5–8, rows 0–1
+    for (let gx = 0; gx < GW; gx++) {
       if (!(gx >= 5 && gx <= 8 && gy <= 1)) add(gx, gy, 0, 'stories');
     }
-    // Back wall (gz=9)
-    for (let gx = 0; gx < W; gx++) add(gx, gy, D - 1, 'stories');
-    // Left wall (gx=0, inner z)
-    for (let gz = 1; gz < D - 1; gz++) add(0, gy, gz, 'people');
-    // Right wall (gx=13, inner z)
-    for (let gz = 1; gz < D - 1; gz++) add(W - 1, gy, gz, 'people');
+    // Back wall
+    for (let gx = 0; gx < GW; gx++) add(gx, gy, GD - 1, 'stories');
+    // Left wall (inner z, avoiding corners for tower overlap)
+    for (let gz = 1; gz < GD - 1; gz++) add(0, gy, gz, 'people');
+    // Right wall
+    for (let gz = 1; gz < GD - 1; gz++) add(GW - 1, gy, gz, 'people');
+    if (q.length >= n) return q.slice(0, n);
   }
 
-  // ── Corner towers (2×2 footprint, 3 extra rows above walls) ──
-  [[0, 0], [W-2, 0], [0, D-2], [W-2, D-2]].forEach(([cx, cz]) => {
-    for (let gy = 5; gy < 8; gy++) {
-      for (let dx = 0; dx < 2; dx++) {
-        for (let dz = 0; dz < 2; dz++) add(cx+dx, gy, cz+dz, 'projects');
+  // ── Phase 2: Wall battlements (row 6, alternating) ─────────────
+  for (let gx = 1; gx < GW - 1; gx += 2) {
+    if (gx < 4 || gx > 9) add(gx, 6, 0, 'stories');
+    add(gx, 6, GD - 1, 'stories');
+  }
+  for (let gz = 1; gz < GD - 1; gz += 2) {
+    add(0, 6, gz, 'people');
+    add(GW - 1, 6, gz, 'people');
+  }
+  if (q.length >= n) return q.slice(0, n);
+
+  // ── Phase 3: Towers + keep grow together ───────────────────────
+  const T_BASE = 7;
+  const KX = 5, KZ = 3;
+
+  for (let i = 0; i < 30; i++) {
+    const tgy = T_BASE + i;
+
+    // All 4 corner towers (2×2 each)
+    for (const [cx, cz] of [[0, 0], [GW - 2, 0], [0, GD - 2], [GW - 2, GD - 2]]) {
+      for (let dx = 0; dx < 2; dx++)
+        for (let dz = 0; dz < 2; dz++)
+          add(cx + dx, tgy, cz + dz, 'projects');
+    }
+
+    // Tower battlement caps every 5 rows
+    if (i > 0 && i % 5 === 0) {
+      for (const [cx, cz] of [[0, 0], [GW - 2, 0], [0, GD - 2], [GW - 2, GD - 2]]) {
+        add(cx, tgy + 1, cz, 'projects');
+        add(cx + 1, tgy + 1, cz + 1, 'projects');
       }
     }
-  });
 
-  // ── Gate arch posts ────────────────────────────────────
-  for (let gy = 2; gy < 5; gy++) {
-    add(5, gy, 0, 'stories');
-    add(8, gy, 0, 'stories');
-  }
-
-  // ── Battlements on outer walls (row 5, alternating) ───
-  for (let gx = 1; gx < W-1; gx += 2) {
-    add(gx, 5, 0, 'stories');   // front
-    add(gx, 5, D-1, 'stories'); // back
-  }
-  for (let gz = 1; gz < D-1; gz += 2) {
-    add(0, 5, gz, 'people');    // left
-    add(W-1, 5, gz, 'people');  // right
-  }
-
-  // ── Tower battlements (row 8, alternating per tower) ─
-  [[0,0],[W-2,0],[0,D-2],[W-2,D-2]].forEach(([cx, cz]) => {
-    [[0,0],[1,0],[0,1],[1,1]].forEach(([dx, dz], i) => {
-      if (i % 2 === 0) add(cx+dx, 8, cz+dz, 'projects');
-    });
-  });
-
-  // ── Central keep (4×4 hollow, rows 0–13) ──────────────
-  const KX = 5, KZ = 3;
-  for (let gy = 0; gy < 14; gy++) {
+    // Keep shell (hollow 4×4)
     for (let dx = 0; dx < 4; dx++) {
       for (let dz = 0; dz < 4; dz++) {
         const isShell = dx === 0 || dx === 3 || dz === 0 || dz === 3;
-        const isSolid = gy >= 12;
-        if (isShell || isSolid) add(KX+dx, gy, KZ+dz, 'preferences');
+        if (isShell) add(KX + dx, i, KZ + dz, 'preferences');
       }
     }
+
+    if (q.length >= n) return q.slice(0, n);
   }
 
-  // ── Keep battlements (row 14, alternating) ────────────
-  [[0,0],[2,0],[0,2],[2,2],[1,1]].forEach(([dx, dz]) => {
-    add(KX+dx, 14, KZ+dz, 'preferences');
-  });
-
-  // ── Keep spire (2×2, rows 14-17) ─────────────────────
-  const SX = KX + 1, SZ = KZ + 1;
-  for (let gy = 14; gy < 18; gy++) {
-    add(SX,   gy, SZ,   'preferences');
-    add(SX+1, gy, SZ,   'preferences');
-    add(SX,   gy, SZ+1, 'preferences');
-    add(SX+1, gy, SZ+1, 'preferences');
-  }
-
-  return slots;
+  return q.slice(0, n);
 }
 
-const allSlots = castleBlueprint();
-
-// Sort bottom-to-top so castle builds from foundation up
-allSlots.sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x || a.pos.z - b.pos.z);
-
-const N_TOTAL = allSlots.length;
-const N_MEM   = memories.length;
-const N_FILL  = Math.min(N_MEM, N_TOTAL);
-
-document.getElementById('count').textContent = N_FILL + ' memories · ' + N_TOTAL + ' bricks';
-
-// ─── Category colors ──────────────────────────────────────
-const CAT_COLOR = {
-  people:      new THREE.Color(0x6a9ab8),
-  projects:    new THREE.Color(0x5a8845),
-  stories:     new THREE.Color(0xb87845),
-  preferences: new THREE.Color(0x8865a8),
+/* ── Memory data ─────────────────────────────────────── */
+const LABELS = {
+  people:      ['A close friend', 'A mentor', 'A collaborator', 'A co-founder', 'Family', 'A teammate', 'An advisor', 'A teacher', 'An old friend', 'A rival turned ally'],
+  projects:    ['A product shipped', 'An open source tool', 'A side project', 'A design system', 'A startup', 'A prototype', 'A feature launched', 'A thesis'],
+  stories:     ['A memory made', 'A lesson learned hard', 'A risk taken', 'A trip abroad', 'A book that changed me', 'A decision that mattered', 'A breakthrough', 'A failure survived', 'A door opened'],
+  preferences: ['A taste developed', 'A philosophy held', 'A habit built', 'A design principle', 'A strong opinion', 'A ritual kept', 'An aesthetic found'],
 };
-const EMPTY_COLOR = new THREE.Color(0x1e1612);
+const MEM_COUNTS = { people: 60, projects: 45, stories: 70, preferences: 55 };
+const memories = [];
+for (const [cat, count] of Object.entries(MEM_COUNTS)) {
+  const lbl = LABELS[cat];
+  for (let i = 0; i < count; i++) memories.push({ cat, label: lbl[i % lbl.length] });
+}
+const rShuf = mkRand(314);
+memories.sort(() => rShuf() - 0.5);
 
-// ─── InstancedMesh for all bricks ─────────────────────────
-// Slight chamfer effect: scale bricks to 0.91 of slot to show mortar
-const brickGeo = new THREE.BoxGeometry(BW * 0.90, BH * 0.86, BD * 0.90);
-const brickMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff,
-  roughness: 0.88,
-  metalness: 0.04,
-});
+const N = memories.length; // 230
+const slots = buildCastleForN(N);
 
-const iMesh = new THREE.InstancedMesh(brickGeo, brickMat, N_TOTAL);
+/* ── UI labels ───────────────────────────────────────── */
+function stageLabel(n) {
+  if (n < 50) return 'foundations';
+  if (n < 120) return 'curtain walls rising';
+  if (n < 180) return 'walls standing';
+  if (n < 210) return 'battlements placed';
+  if (n < 300) return 'towers & keep emerging';
+  if (n < 500) return 'fortress taking shape';
+  if (n < 700) return 'stronghold';
+  return 'great fortress';
+}
+document.getElementById('stage').textContent = stageLabel(N);
+document.getElementById('count').textContent = N + ' memories';
+
+/* ── colors ──────────────────────────────────────────── */
+const SEC_COL = {
+  people:      new THREE.Color(0x6a9cbe),
+  stories:     new THREE.Color(0xbe7848),
+  projects:    new THREE.Color(0x548844),
+  preferences: new THREE.Color(0x8858a8),
+};
+
+/* ── instanced mesh ──────────────────────────────────── */
+const bGeo = new THREE.BoxGeometry(BW * 0.90, BH * 0.86, BD * 0.90);
+const bMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.04 });
+const iMesh = new THREE.InstancedMesh(bGeo, bMat, N);
 iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-iMesh.castShadow = true;
-iMesh.receiveShadow = true;
+iMesh.castShadow = true; iMesh.receiveShadow = true;
 scene.add(iMesh);
 
 const dummy = new THREE.Object3D();
-const brickData = []; // { label, basePos, isFilled, isNew }
+const meta = []; // per-brick metadata
+const rCol = mkRand(91);
 
-// Color variation seed
-const rCol = mkRand(333);
+slots.forEach(({ pos, section }, i) => {
+  const mem = memories[i];
+  const base = SEC_COL[section].clone();
+  const v = (rCol() - 0.5) * 0.10;
+  base.r = THREE.MathUtils.clamp(base.r + v, 0.03, 0.95);
+  base.g = THREE.MathUtils.clamp(base.g + v, 0.03, 0.95);
+  base.b = THREE.MathUtils.clamp(base.b + v, 0.03, 0.95);
 
-allSlots.forEach(({ pos, section }, i) => {
-  const isFilled = i < N_FILL;
-
-  dummy.position.copy(pos);
-  dummy.updateMatrix();
+  dummy.position.copy(pos); dummy.scale.set(1, 1, 1); dummy.updateMatrix();
   iMesh.setMatrixAt(i, dummy.matrix);
+  iMesh.setColorAt(i, base);
 
-  let color;
-  if (isFilled) {
-    color = CAT_COLOR[section].clone();
-    // Subtle per-brick variation for natural stone look
-    const v = (rCol() - 0.5) * 0.12;
-    color.r = Math.max(0.02, Math.min(0.98, color.r + v));
-    color.g = Math.max(0.02, Math.min(0.98, color.g + v));
-    color.b = Math.max(0.02, Math.min(0.98, color.b + v));
-  } else {
-    color = EMPTY_COLOR.clone();
-  }
-  iMesh.setColorAt(i, color);
-
-  brickData.push({
-    label: isFilled ? memories[i].label : null,
-    cat:   section,
-    basePos: pos.clone(),
-    isFilled,
-    isNew: false, // set below
-  });
+  meta.push({ label: mem.label, section, basePos: pos.clone(), baseColor: base.clone(), isNew: false });
 });
-
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-// ─── 10% daily animation selection ───────────────────────
-// Pick from the TOP filled bricks (most recently added)
-const filledIndices = brickData.map((_, i) => i).filter(i => brickData[i].isFilled);
-// Score: highest bricks + daily randomness
-const animCandidates = filledIndices
-  .map(i => ({ i, score: brickData[i].basePos.y * 10 + hashStr(i + '-' + dateSeed) / 0xffffffff }))
-  .sort((a, b) => b.score - a.score)
-  .slice(0, Math.max(1, Math.ceil(N_FILL * 0.10)));
+/* ── daily animation (10% highest bricks) ────────────── */
+const animCount = Math.max(1, Math.ceil(N * 0.10));
+const scored = meta.map((d, i) => ({
+  i, score: d.basePos.y * 100 + hash32(i * 7 + dateSeed) / 0xffffffff,
+})).sort((a, b) => b.score - a.score).slice(0, animCount);
 
-animCandidates.forEach(({ i }) => { brickData[i].isNew = true; });
-
-// Prepare animation state
 const animItems = [];
-animCandidates.forEach(({ i }, animIdx) => {
-  const d = brickData[i];
+scored.forEach(({ i }, ai) => {
+  meta[i].isNew = true;
+  const d = meta[i];
 
-  // Start brick high above, invisible
-  dummy.position.set(d.basePos.x, d.basePos.y + 14, d.basePos.z);
-  dummy.updateMatrix();
+  // Start high + invisible
+  dummy.position.set(d.basePos.x, d.basePos.y + 16, d.basePos.z);
+  dummy.scale.set(1, 1, 1); dummy.updateMatrix();
   iMesh.setMatrixAt(i, dummy.matrix);
-
-  // Tint this brick black (will restore on land)
   iMesh.setColorAt(i, new THREE.Color(0x000000));
 
   animItems.push({
-    idx:    i,
-    delay:  1.5 + animIdx * 0.28,
-    elapsed: 0,
-    phase:  'wait',
-    baseColor: CAT_COLOR[d.cat].clone().multiplyScalar(1.1 + Math.random() * 0.2),
+    idx: i, delay: 1.2 + ai * 0.22, elapsed: 0, phase: 'wait',
   });
 });
-
 iMesh.instanceMatrix.needsUpdate = true;
 iMesh.instanceColor.needsUpdate = true;
 
-// ─── Ambient ember particles ──────────────────────────────
-const particleGeo = new THREE.BufferGeometry();
-const PCOUNT = 300;
-const pPos = new Float32Array(PCOUNT * 3);
-const pSeed = mkRand(55);
+/* ── ember particles ─────────────────────────────────── */
+const PCOUNT = 250;
+const pArr = new Float32Array(PCOUNT * 3);
 for (let i = 0; i < PCOUNT; i++) {
-  pPos[i*3]   = (pSeed() - 0.5) * 20;
-  pPos[i*3+1] = pSeed() * 12;
-  pPos[i*3+2] = (pSeed() - 0.5) * 15;
+  pArr[i * 3]     = (Math.random() - 0.5) * 20;
+  pArr[i * 3 + 1] = Math.random() * 12;
+  pArr[i * 3 + 2] = (Math.random() - 0.5) * 15;
 }
-particleGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-const particles = new THREE.Points(
-  particleGeo,
-  new THREE.PointsMaterial({ color: 0xff8844, size: 0.06, transparent: true, opacity: 0.5 })
-);
-scene.add(particles);
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pArr, 3));
+scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color: 0xff8844, size: 0.06, transparent: true, opacity: 0.45,
+})));
 
-// ─── Hover ────────────────────────────────────────────────
+/* ── hover ───────────────────────────────────────────── */
 const ray = new THREE.Raycaster();
 const mouse = new THREE.Vector2(-999, -999);
 const labelEl = document.getElementById('label');
-let curHover = -1;
-let curHoverColor = null;
+let curHover = -1, savedColor = null;
 
 addEventListener('mousemove', e => {
   mouse.x = (e.clientX / innerWidth) * 2 - 1;
@@ -453,119 +384,105 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-// ─── Render loop ──────────────────────────────────────────
+/* ── render loop ─────────────────────────────────────── */
 const clock = new THREE.Clock();
-let needsColorUpdate = false;
+let colorDirty = false;
 
 renderer.setAnimationLoop(() => {
-  const dt = clock.getDelta();
-  const t  = clock.getElapsedTime();
+  const dt = clock.getDelta(), t = clock.getElapsedTime();
   ctrl.update();
 
-  // Drift ember particles upward
-  const pArr = particleGeo.attributes.position.array;
+  // Torch flicker
+  const flicker = 1.0 + Math.sin(t * 8.3) * 0.15 + Math.sin(t * 13.7) * 0.1;
+  torchL.intensity = torchR.intensity = 3.0 * flicker;
+  keepGlow.intensity = 1.8 * (1.0 + Math.sin(t * 3.1) * 0.1);
+
+  // Particles drift up
   for (let i = 0; i < PCOUNT; i++) {
-    pArr[i*3+1] += dt * (0.3 + Math.sin(t * 0.3 + i) * 0.15);
-    if (pArr[i*3+1] > 14) pArr[i*3+1] = pSeed() * 1.5;
+    pArr[i * 3 + 1] += dt * (0.3 + Math.sin(t * 0.3 + i) * 0.12);
+    if (pArr[i * 3 + 1] > 14) pArr[i * 3 + 1] = Math.random() * 1.5;
   }
-  particleGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.position.needsUpdate = true;
 
   // ── Brick animations ──────────────────────────────────
   for (const item of animItems) {
     if (item.phase === 'done') continue;
     item.elapsed += dt;
-    const d = brickData[item.idx];
+    const d = meta[item.idx];
 
     if (item.phase === 'wait') {
-      if (item.elapsed >= item.delay) {
-        item.phase = 'fall'; item.elapsed = 0;
-      }
-    } else if (item.phase === 'fall') {
-      const p = Math.min(item.elapsed / 1.1, 1);
-      // Smooth gravity ease
-      const ease = p < 0.65 ? (p / 0.65) ** 2.2 : 1 - Math.sin((p - 0.65) / 0.35 * Math.PI * 0.5) * 0.04 * (1 - p);
-      const y = d.basePos.y + 14 * (1 - ease);
+      if (item.elapsed >= item.delay) { item.phase = 'fall'; item.elapsed = 0; }
 
-      dummy.position.set(d.basePos.x, y, d.basePos.z);
-      dummy.updateMatrix();
+    } else if (item.phase === 'fall') {
+      const p = Math.min(item.elapsed / 1.0, 1);
+      const ease = p < 0.65 ? (p / 0.65) ** 2.2 : 1 - Math.sin((p - 0.65) / 0.35 * Math.PI * 0.5) * 0.04 * (1 - p);
+
+      dummy.position.set(d.basePos.x, d.basePos.y + 16 * (1 - ease), d.basePos.z);
+      dummy.scale.set(1, 1, 1); dummy.updateMatrix();
       iMesh.setMatrixAt(item.idx, dummy.matrix);
 
-      // Fade color from black to target
-      const frac = Math.min(p * 1.8, 1);
-      const col = item.baseColor.clone().multiplyScalar(frac);
-      iMesh.setColorAt(item.idx, col);
-      needsColorUpdate = true;
+      const f = Math.min(p * 2.0, 1);
+      iMesh.setColorAt(item.idx, d.baseColor.clone().multiplyScalar(f));
+      colorDirty = true;
 
       if (p >= 1) {
         dummy.position.copy(d.basePos); dummy.updateMatrix();
         iMesh.setMatrixAt(item.idx, dummy.matrix);
-        iMesh.setColorAt(item.idx, item.baseColor);
+        iMesh.setColorAt(item.idx, d.baseColor);
         item.phase = 'squash'; item.elapsed = 0;
       }
+
     } else if (item.phase === 'squash') {
       const p = Math.min(item.elapsed / 0.18, 1);
       const sx = p < 0.4 ? 1 + 0.18 * (p / 0.4) : 1.18 - 0.18 * ((p - 0.4) / 0.6);
       const sy = p < 0.4 ? 1 - 0.22 * (p / 0.4) : 0.78 + 0.22 * ((p - 0.4) / 0.6);
       dummy.position.copy(d.basePos);
-      dummy.scale.set(sx, Math.max(sy, 0.3), sx);
-      dummy.updateMatrix();
+      dummy.scale.set(sx, Math.max(sy, 0.3), sx); dummy.updateMatrix();
       iMesh.setMatrixAt(item.idx, dummy.matrix);
       if (p >= 1) {
         dummy.scale.set(1, 1, 1); dummy.position.copy(d.basePos);
         dummy.updateMatrix(); iMesh.setMatrixAt(item.idx, dummy.matrix);
         item.phase = 'glow'; item.elapsed = 0;
       }
+
     } else if (item.phase === 'glow') {
-      // Flash bright gold
-      const p = Math.min(item.elapsed / 0.6, 1);
-      const intensity = Math.sin(p * Math.PI) * 0.9;
-      const glowCol = item.baseColor.clone().lerp(new THREE.Color(0xffd070), intensity);
-      iMesh.setColorAt(item.idx, glowCol);
-      needsColorUpdate = true;
+      const p = Math.min(item.elapsed / 0.55, 1);
+      const glow = Math.sin(p * Math.PI) * 0.85;
+      iMesh.setColorAt(item.idx, d.baseColor.clone().lerp(new THREE.Color(0xffd070), glow));
+      colorDirty = true;
       if (p >= 1) {
-        iMesh.setColorAt(item.idx, item.baseColor);
+        iMesh.setColorAt(item.idx, d.baseColor);
         item.phase = 'done';
       }
     }
     iMesh.instanceMatrix.needsUpdate = true;
   }
-
-  if (needsColorUpdate) {
-    iMesh.instanceColor.needsUpdate = true;
-    needsColorUpdate = false;
-  }
+  if (colorDirty) { iMesh.instanceColor.needsUpdate = true; colorDirty = false; }
 
   // ── Hover ─────────────────────────────────────────────
   ray.setFromCamera(mouse, cam);
   const hits = ray.intersectObject(iMesh);
+  let hi = hits.length > 0 ? hits[0].instanceId : -1;
 
-  let hoverIdx = -1;
-  if (hits.length > 0) hoverIdx = hits[0].instanceId;
-
-  if (hoverIdx !== curHover) {
-    // Restore previous hover
-    if (curHover >= 0 && curHoverColor) {
-      iMesh.setColorAt(curHover, curHoverColor);
+  if (hi !== curHover) {
+    // Restore old
+    if (curHover >= 0 && savedColor) {
+      iMesh.setColorAt(curHover, savedColor);
       iMesh.instanceColor.needsUpdate = true;
     }
+    curHover = hi; savedColor = null;
 
-    curHover = hoverIdx;
-    const d = hoverIdx >= 0 ? brickData[hoverIdx] : null;
-
-    if (d?.label) {
-      // Save current color and apply bright highlight
-      const cur = new THREE.Color();
-      iMesh.getColorAt(hoverIdx, cur);
-      curHoverColor = cur.clone();
-
-      iMesh.setColorAt(hoverIdx, cur.clone().lerp(new THREE.Color(0xffffff), 0.5));
+    if (hi >= 0 && meta[hi]) {
+      const c = new THREE.Color();
+      iMesh.getColorAt(hi, c);
+      savedColor = c.clone();
+      iMesh.setColorAt(hi, c.clone().lerp(new THREE.Color(0xffffff), 0.5));
       iMesh.instanceColor.needsUpdate = true;
 
-      labelEl.textContent = d.label;
+      labelEl.textContent = meta[hi].label;
       labelEl.style.opacity = '1';
       document.body.style.cursor = 'pointer';
     } else {
-      curHoverColor = null;
       labelEl.style.opacity = '0';
       document.body.style.cursor = 'default';
     }
@@ -573,8 +490,6 @@ renderer.setAnimationLoop(() => {
 
   renderer.render(scene, cam);
 });
-
-
 </script>
 </body>
 </html>
