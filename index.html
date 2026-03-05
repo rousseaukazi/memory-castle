@@ -281,29 +281,23 @@ const kx=(KX+1-GW/2+0.5)*BW, kz=(KZ+1-GD/2+0.5)*BD;
 // visually clash with falling spire bricks. Spire cone crowns everything.
 
 // Spire cone (LAST — the finale)
-const baseCountCalc=(()=>{
-  let cnt=0;
-  for(let gy=0;gy<H_WALL;gy++){
-    for(let gx=0;gx<GW;gx++) if(!(gx>=GATE_GX&&gx<GATE_GX+GATE_W&&gy<GATE_H)) cnt++;
-    cnt+=GW+2*(GD-2)+2*(GD-2);
-  }
-  for(let gx=0;gx<GW;gx+=2) cnt+=2; for(let gz=1;gz<GD-1;gz+=2) cnt+=2;
-  cnt+=TCORNERS.length*4*TOWER_EXTRA+TCORNERS.length*2;
-  cnt+=(H_WALL+5)*2*(KW+KD-2)+KW*KD*2;
-  return cnt;
-})();
-const spireRows=Math.floor(Math.max(0,N-baseCountCalc)/4);
-if(spireRows>0){
-  const spTopRow=H_KEEP+2+spireRows-1;
+// Position derived from actual highest brick Y in slots — single source of truth.
+// No separate baseCountCalc: that was out of sync with buildCastleForN and caused
+// the cone to land mid-spire instead of above the topmost brick.
+const maxBrickY = slots.reduce((mx,{pos})=>Math.max(mx,pos.y), 0);
+const sConeBottom = maxBrickY + BH*0.84*0.5 + 0.08; // top edge of tallest brick + gap
+// Only add if there are spire bricks (highest brick is above keep cap level)
+const keepCapTopY = (H_KEEP+1)*BH; // approximate top of keep cap bricks
+if(maxBrickY > keepCapTopY){
   const sx=(SPIRE_GX+1-GW/2)*BW, sz=(SPIRE_GZ+1-GD/2)*BD;
-  const sConeBottom=towerTopY(spTopRow);
-  const sConeH=0.85+spireRows*0.06;
+  const sConeH=1.10;
   const sCone=new THREE.Mesh(new THREE.ConeGeometry(0.38,sConeH,7),(()=>{ const m=roofMat.clone(); m.color.set(0x6a3018); return m; })());
-  sCone.position.set(sx,sConeBottom+sConeH*0.5,sz); scene.add(sCone);
-  const spPoleH=0.50;
-  const spPole=new THREE.Mesh(new THREE.CylinderGeometry(0.020,0.020,spPoleH,5),poleMat); spPole.position.set(sx,sConeBottom+sConeH+spPoleH*0.5,sz); scene.add(spPole);
+  sCone.position.set(sx, sConeBottom+sConeH*0.5, sz); scene.add(sCone);
+  const spPoleH=0.55;
+  const spPole=new THREE.Mesh(new THREE.CylinderGeometry(0.020,0.020,spPoleH,5),poleMat);
+  spPole.position.set(sx, sConeBottom+sConeH+spPoleH*0.5, sz); scene.add(spPole);
   const spFlag=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.13,0.02),new THREE.MeshBasicMaterial({color:0x9944cc,side:THREE.DoubleSide}));
-  spFlag.position.set(sx+0.14,sConeBottom+sConeH+spPoleH*0.8,sz); scene.add(spFlag);
+  spFlag.position.set(sx+0.14, sConeBottom+sConeH+spPoleH*0.8, sz); scene.add(spFlag);
   addCapGroup([sCone,spPole,spFlag], 4*0.18+0.40); // LAST — crowns the castle
 }
 
