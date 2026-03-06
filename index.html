@@ -224,7 +224,7 @@ const bGeo=new THREE.BoxGeometry(BW*0.88,BH*0.84,BD*0.88);
 const bMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.85,metalness:0.03,emissive:new THREE.Color(0x180a04),emissiveIntensity:0.45});
 const iMesh=new THREE.InstancedMesh(bGeo,bMat,MAX_N);
 iMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-iMesh.instanceColor.setUsage=THREE.DynamicDrawUsage;
+// instanceColor is null until first setColorAt call — can't set usage here
 iMesh.castShadow=true; iMesh.receiveShadow=true; scene.add(iMesh);
 const dummy=new THREE.Object3D();
 
@@ -372,7 +372,8 @@ document.getElementById('n-slider').addEventListener('input',e=>{
 });
 
 /* ─── mode toggle ─────────────────────────────────── */
-let isDark=true,modeT=0,modeTgt=0;
+let isDark=false,modeT=1,modeTgt=1;
+document.getElementById('toggle').textContent='☀️';
 document.getElementById('toggle').addEventListener('click',()=>{ isDark=!isDark; modeTgt=isDark?0:1; document.getElementById('toggle').textContent=isDark?'🌙':'☀️'; });
 
 /* ─── hover ───────────────────────────────────────── */
